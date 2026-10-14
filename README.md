@@ -1,3 +1,17 @@
+# Zombie Couple Video
+
+Minimal working product on the VideoFly template (MIT). Upload a two-person photo, get a free watermarked cartoon zombie **image**, then pay **$6.99 one-time** for one 5-second video.
+
+- Title: AI Zombie Couple Video Generator
+- H1: Create Your AI Zombie Couple Video
+- Keyword: zombie couple video
+- Free preview is an image; the video is generated after payment.
+- Deploy: Next.js on Vercel, Postgres (Neon), private R2, Stripe Checkout, KIE, Resend magic link.
+- Apply `src/db/migrations/0001_zcv.sql` on the Neon database after the template schema exists.
+- Required env var **names** are listed in `.env.example`. Do not commit live keys.
+
+This repository keeps the original MIT license notice from the VideoFly / saasfly template.
+
 # VideoFly 🎬
 
 一个生产级 AI 视频生成 SaaS 模板，基于 Next.js 15 构建，支持 Sora 2、Veo 3.1 等先进 AI 模型。

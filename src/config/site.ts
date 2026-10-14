@@ -23,22 +23,21 @@ export interface SiteConfig {
 }
 
 export const siteConfig: SiteConfig = {
-  name: "VideoFly",
-  description: "AI Video Generation Platform - Create stunning videos with Sora 2, Veo 3.1, and more",
-  url: process.env.NEXT_PUBLIC_APP_URL || "https://videofly.app",
+  name: "Zombie Couple Video",
+  description: "AI Zombie Couple Video Generator",
+  url: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
   ogImage: "/og.png",
   links: {},
   auth: {
-    enableGoogleLogin: true,
+    enableGoogleLogin: false,
     enableMagicLinkLogin: true,
-    defaultProvider: "google",
+    defaultProvider: "email",
   },
   routes: {
-    defaultLoginRedirect: "/text-to-video",
+    defaultLoginRedirect: "/",
   },
 };
 
-// Helper to get enabled auth providers
 export function getEnabledAuthProviders() {
   const providers: string[] = [];
   if (siteConfig.auth.enableGoogleLogin) providers.push("google");

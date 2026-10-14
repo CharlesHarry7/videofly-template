@@ -41,6 +41,12 @@ export interface AIVideoProvider {
   supportImageToVideo: boolean;
   createTask(params: VideoGenerationParams): Promise<VideoTaskResponse>;
   getTaskStatus(taskId: string): Promise<VideoTaskResponse>;
+  reviewVideo?(input: { videoUrl: string }): Promise<{
+    safe: boolean;
+    reason: string;
+    costCredits?: number | null;
+    raw?: unknown;
+  }>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   parseCallback(payload: any): VideoTaskResponse;
 }

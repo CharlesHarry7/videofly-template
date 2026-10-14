@@ -1,30 +1,21 @@
-import { PricingSection } from "@/components/landing/pricing-section";
-import { FAQSection } from "@/components/landing/faq-section";
-import type { Locale } from "@/config/i18n-config";
-import { buildAlternates } from "@/lib/seo";
+import type { Metadata } from "next";
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ locale: Locale }>;
-}) {
-  const { locale } = await params;
-  const alternates = buildAlternates("/pricing", locale);
+import { ZcvFaq, ZcvPricing } from "@/components/zcv/zcv-sections";
+import { siteConfig } from "@/config/site";
+import { ZCV_DURATION_SECONDS, ZCV_PRICE_LABEL } from "@/zcv/product";
 
-  return {
-    title: "Pricing",
-    alternates: {
-      canonical: alternates.canonical,
-      languages: alternates.languages,
-    },
-  };
-}
+export const metadata: Metadata = {
+  title: `Zombie Couple Video Pricing | ${ZCV_PRICE_LABEL} One Time`,
+  description:
+    `One ${ZCV_PRICE_LABEL} payment for one ${ZCV_DURATION_SECONDS}-second silent cartoon zombie couple video. No subscription.`,
+  alternates: { canonical: `${siteConfig.url}/pricing` },
+};
 
-export default async function PricingPage() {
+export default function PricingPage() {
   return (
-    <div className="flex w-full flex-col gap-0">
-      <PricingSection />
-      <FAQSection />
-    </div>
+    <>
+      <ZcvPricing />
+      <ZcvFaq />
+    </>
   );
 }

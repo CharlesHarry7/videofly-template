@@ -11,7 +11,7 @@ import {
 
 export class KieProvider implements AIVideoProvider {
   name = "kie";
-  supportImageToVideo = false; // kie only supports text-to-video
+  supportImageToVideo = true;
   private apiKey: string;
   private baseUrl = "https://api.kie.ai";
 
@@ -100,6 +100,74 @@ export class KieProvider implements AIVideoProvider {
         ? { code: data.failCode, message: data.failMsg }
         : undefined,
       raw: data,
+    };
+  }
+
+  async reviewVideo(input: { videoUrl: string }) {
+    const response = await fetch(
+      `${this.baseUrl}/gemini-4-argon-openai/v1/chat/completions`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gemini-4-argon",
+          stream: false,
+          max_tokens: 200,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: 'Review this video only for visible blood, open wounds, gore, or graphic violence. Mark it safe only when none are visible. Return only JSON with this exact shape: {"safe": true, "reason": "brief reason"}.',
+                },
+                {
+                  type: "image_url",
+                  image_url: { url: input.videoUrl },
+                },
+              ],
+            },
+          ],
+        }),
+      }
+    );
+    const result = await response.json();
+    if (!response.ok || !Array.isArray(result.choices)) {
+      throw new Error(result?.error?.message || "KIE video review failed");
+    }
+    const content = result.choices[0]?.message?.content;
+    if (typeof content !== "string") {
+      throw new Error("KIE video review returned no text");
+    }
+    const jsonText = content
+      .trim()
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/, "");
+    const decision = JSON.parse(jsonText) as {
+      safe?: unknown;
+      reason?: unknown;
+    };
+    if (typeof decision.safe !== "boolean") {
+      throw new Error("KIE video review returned an invalid decision");
+    }
+    const rawCost =
+      result?.credits_consumed ??
+      result?.consumeCredits ??
+      result?.data?.credits_consumed ??
+      result?.data?.consumeCredits;
+    const parsedCost =
+      typeof rawCost === "number" || typeof rawCost === "string"
+        ? Number(rawCost)
+        : Number.NaN;
+    return {
+      safe: decision.safe,
+      reason: typeof decision.reason === "string" ? decision.reason : "",
+      costCredits:
+        Number.isFinite(parsedCost) && parsedCost >= 0 ? parsedCost : null,
+      raw: result,
     };
   }
 

@@ -41,7 +41,6 @@ export function UserAuthForm({
     resolver: zodResolver(userAuthSchema),
   });
   const [isLoading, setIsLoading] = React.useState<boolean>(false);
-  const [isGoogleLoading, setIsGoogleLoading] = React.useState<boolean>(false);
   const searchParams = useSearchParams();
 
   async function onSubmit(data: FormData) {
@@ -50,7 +49,7 @@ export function UserAuthForm({
     try {
       await authClient.signIn.magicLink({
         email: data.email.toLowerCase(),
-        callbackURL: searchParams?.get("from") ?? `/${lang}/my-creations`,
+        callbackURL: searchParams?.get("from") ?? `/${lang}`,
       });
 
       toast.success("Check your email", {
@@ -81,7 +80,7 @@ export function UserAuthForm({
               autoCapitalize="none"
               autoComplete="email"
               autoCorrect="off"
-              disabled={isLoading || isGoogleLoading || disabled}
+              disabled={isLoading || disabled}
               {...register("email")}
             />
             {errors?.email && (
@@ -102,40 +101,6 @@ export function UserAuthForm({
           </button>
         </div>
       </form>
-      <div className="relative">
-        <div className="absolute inset-0 flex items-center">
-          <span className="w-full border-t" />
-        </div>
-        <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-background px-2 text-muted-foreground">
-            {t("signin_others")}
-          </span>
-        </div>
-      </div>
-      <button
-        type="button"
-        className={cn(buttonVariants({ variant: "outline" }))}
-        onClick={() => {
-          setIsGoogleLoading(true);
-          authClient.signIn
-            .social({
-              provider: "google",
-              callbackURL: searchParams?.get("from") ?? `/${lang}/my-creations`,
-            })
-            .catch((error) => {
-              console.error("Google signIn error:", error);
-              setIsGoogleLoading(false);
-            });
-        }}
-        disabled={isLoading || isGoogleLoading}
-      >
-        {isGoogleLoading ? (
-          <Icons.Spinner className="mr-2 h-4 w-4 animate-spin" />
-        ) : (
-          <Icons.Google className="mr-2 h-4 w-4" />
-        )}{" "}
-        Continue with Google
-      </button>
     </div>
   );
 }

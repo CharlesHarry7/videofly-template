@@ -75,6 +75,17 @@ export class Storage {
   }
 
   /**
+   * Read a private object from R2/S3.
+   */
+  async getFile(key: string): Promise<Buffer> {
+    const data = await this.client.getObjectArrayBuffer(key);
+    if (!data) {
+      throw new Error(`Object not found: ${key}`);
+    }
+    return Buffer.from(data);
+  }
+
+  /**
    * 获取公开 URL
    */
   getPublicUrl(key: string): string {

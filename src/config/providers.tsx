@@ -18,8 +18,6 @@ if (typeof window !== "undefined") {
       api_host: posthogHost,
       capture_pageview: false,
     });
-  } else {
-    console.error("PostHog environment variables are missing");
   }
 }
 
