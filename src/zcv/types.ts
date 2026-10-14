@@ -67,7 +67,12 @@ export interface JobRecord {
   previewId: string;
   userId: string;
   status: JobStatus;
-  moderationStatus: "pending" | "approved" | "rejected" | "unknown";
+  moderationStatus:
+    | "pending"
+    | "submitted"
+    | "approved"
+    | "rejected"
+    | "unknown";
   phase: "video" | "done";
   kieImageTaskId: string | null;
   kieVideoTaskId: string | null;

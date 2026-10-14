@@ -394,7 +394,8 @@ export class ZcvStore {
          SET status='refund_pending', moderation_status=$4,
              error_message=$5, updated_at=NOW()
          WHERE id=$1 AND order_id=$2 AND kie_video_task_id=$3
-           AND status='video_submitted' AND moderation_status=$6 ${tokenCondition}
+           AND status IN ('video_submitted','needs_check')
+           AND moderation_status=$6 ${tokenCondition}
          RETURNING id`,
         params
       );
@@ -435,6 +436,97 @@ export class ZcvStore {
       reason,
       costCredits: asNullableNumber(rows[0].cost_credits),
     };
+  }
+
+  async markModerationReviewSubmitted(
+    input: {
+      id: string;
+      taskId: string;
+      expectedModerationStatus: JobRecord["moderationStatus"];
+      reconciliationToken: string;
+      provider: string;
+      model: string;
+      orderId: string;
+      previewId: string;
+    }
+  ): Promise<boolean> {
+    return this.transaction(async (store) => {
+      const rows = await store.sql.query(
+        `UPDATE zcv_jobs
+         SET status='needs_check', moderation_status='submitted',
+             error_message='Safety review may have been dispatched; confirmation required',
+             updated_at=NOW()
+         WHERE id=$1 AND kie_video_task_id=$2 AND status='video_submitted'
+           AND moderation_status=$3 AND reconciliation_token=$4
+         RETURNING id`,
+        [
+          input.id,
+          input.taskId,
+          input.expectedModerationStatus,
+          input.reconciliationToken,
+        ]
+      );
+      if (rows.length === 0) return false;
+      await store.sql.query(
+        `INSERT INTO zcv_provider_logs (
+          task_id, provider, model, purpose, status, cost_credits,
+          order_id, preview_id, job_id, raw
+        ) VALUES ($1,$2,$3,'moderation','dispatching',NULL,$4,$5,$6,$7::jsonb)`,
+        [
+          input.taskId,
+          input.provider,
+          input.model,
+          input.orderId,
+          input.previewId,
+          input.id,
+          JSON.stringify({ phase: "dispatching" }),
+        ]
+      );
+      return true;
+    });
+  }
+
+  async resetModerationReviewBeforeDispatch(input: {
+    id: string;
+    taskId: string;
+    expectedModerationStatus: JobRecord["moderationStatus"];
+    reconciliationToken: string;
+  }): Promise<boolean> {
+    return this.transaction(async (store) => {
+      const rows = await store.sql.query(
+        `UPDATE zcv_jobs
+         SET status='video_submitted', moderation_status=$3,
+             error_message=NULL, updated_at=NOW()
+         WHERE id=$1 AND kie_video_task_id=$2 AND status='needs_check'
+           AND moderation_status='submitted' AND reconciliation_token=$4
+         RETURNING id`,
+        [
+          input.id,
+          input.taskId,
+          input.expectedModerationStatus,
+          input.reconciliationToken,
+        ]
+      );
+      if (rows.length === 0) return false;
+      const dispatchLog = await store.sql.query(
+        `UPDATE zcv_provider_logs
+         SET status='not_dispatched',
+             raw=COALESCE(raw, '{}'::jsonb) || '{"reason":"deadline expired before request"}'::jsonb
+         WHERE id=(
+           SELECT id FROM zcv_provider_logs
+           WHERE job_id=$1 AND task_id=$2 AND purpose='moderation'
+             AND status='dispatching'
+           ORDER BY id DESC
+           LIMIT 1
+         )
+         RETURNING id`,
+        [input.id, input.taskId]
+      );
+      if (dispatchLog.length === 0) {
+        throw new Error("Missing persisted moderation dispatch record");
+      }
+      return true;
+    });
   }
 
   async insertJobIfAbsent(job: JobRecord): Promise<JobRecord> {
@@ -504,7 +596,10 @@ export class ZcvStore {
            reconciliation_token=$5, reconciliation_lease_until=$6,
            updated_at=NOW()
        WHERE id=$1 AND kie_video_task_id=$2
-         AND status IN ('video_submitted','submission_unknown')
+         AND (
+           status IN ('video_submitted','submission_unknown')
+           OR (status='needs_check' AND moderation_status='submitted')
+         )
          AND (last_reconciled_at IS NULL OR last_reconciled_at <= $4)
          AND (reconciliation_token IS NULL OR reconciliation_lease_until <= $3)
        RETURNING id`,
@@ -531,6 +626,30 @@ export class ZcvStore {
       `SELECT * FROM zcv_jobs
        WHERE status IN ('pending', 'submitting', 'submission_unknown', 'video_submitted', 'needs_check')
          AND (status <> 'submitting' OR updated_at < NOW() - INTERVAL '2 minutes')
+         AND (status <> 'submission_unknown' OR kie_video_task_id IS NOT NULL)
+         AND (
+           moderation_status <> 'submitted'
+           OR EXISTS (
+             SELECT 1 FROM zcv_provider_logs AS moderation_log
+             WHERE moderation_log.job_id=zcv_jobs.id
+               AND moderation_log.task_id=zcv_jobs.kie_video_task_id
+               AND moderation_log.purpose='moderation'
+               AND moderation_log.status IN ('approved','rejected')
+           )
+         )
+         AND (
+           status <> 'needs_check'
+           OR (
+             moderation_status='submitted'
+             AND EXISTS (
+               SELECT 1 FROM zcv_provider_logs AS moderation_log
+               WHERE moderation_log.job_id=zcv_jobs.id
+                 AND moderation_log.task_id=zcv_jobs.kie_video_task_id
+                 AND moderation_log.purpose='moderation'
+                 AND moderation_log.status IN ('approved','rejected')
+             )
+           )
+         )
          AND (reconciliation_token IS NULL OR reconciliation_lease_until <= NOW())
        ORDER BY last_reconciled_at ASC NULLS FIRST, created_at ASC
        LIMIT $1`,
@@ -548,6 +667,16 @@ export class ZcvStore {
       [id]
     );
     return rows.length > 0;
+  }
+
+  async releaseJobSubmissionClaim(id: string): Promise<void> {
+    await this.sql.query(
+      `UPDATE zcv_jobs
+       SET status='pending', attempt_count=GREATEST(attempt_count-1, 0),
+           error_message=NULL, updated_at=NOW()
+       WHERE id=$1 AND status='submitting' AND kie_video_task_id IS NULL`,
+      [id]
+    );
   }
 
   async recordJobSubmission(
@@ -673,7 +802,8 @@ export class ZcvStore {
     const rows = await this.sql.query(
       `UPDATE zcv_jobs
        SET ${assignments.join(", ")}, updated_at=NOW()
-       WHERE id=$1 AND kie_video_task_id=$2 AND status='video_submitted'
+       WHERE id=$1 AND kie_video_task_id=$2
+         AND status IN ('video_submitted','needs_check')
          AND moderation_status=$3 ${tokenCondition}
        RETURNING id`,
       params

@@ -390,7 +390,11 @@ describe("Zombie Couple Video product", () => {
     expect(completed?.status).toBe("completed");
     expect(order?.deliveredAt).toBeTruthy();
     const moderationCosts = (await harness.store.listProviderLogs())
-      .filter((log) => log.purpose === "moderation")
+      .filter(
+        (log) =>
+          log.purpose === "moderation" &&
+          (log.status === "approved" || log.status === "rejected")
+      )
       .map((log) => log.costCredits);
     expect(moderationCosts).toEqual([null, 0.0123]);
   });
@@ -433,7 +437,8 @@ describe("Zombie Couple Video product", () => {
     harness.advanceTime(ZCV_LIMITS.reconcileCooldownMs + 1);
     await expect(harness.service.reconcileJob(job!.id)).rejects.toThrow();
 
-    expect((await harness.store.getJob(job!.id))?.status).toBe("video_submitted");
+    expect((await harness.store.getJob(job!.id))?.status).toBe("needs_check");
+    expect((await harness.store.getJob(job!.id))?.moderationStatus).toBe("submitted");
     expect((await harness.store.getOrder(paid.checkout.orderId))?.status).toBe("paid");
     expect(harness.provider.reviewCalls).toBe(2);
 
@@ -483,17 +488,23 @@ describe("Zombie Couple Video product", () => {
     "bounds a hung %s operation so later paid jobs still reconcile",
     async (blockedStage) => {
       let release!: () => void;
+      let signalBlockedStage!: () => void;
+      const blockedStageReached = new Promise<void>((resolve) => {
+        signalBlockedStage = resolve;
+      });
       const blocked = new Promise<void>((resolve) => {
         release = resolve;
       });
       const harness = await createHarness({
-        providerTimeoutMs: 25,
-        fetchBinary: async (url) =>
-          url.endsWith("/a.mp4")
-            ? blocked.then(() => Buffer.from("a"))
-            : url.endsWith("/b.mp4")
-              ? Buffer.from("b")
-              : Buffer.from(png),
+        providerTimeoutMs: 250,
+        fetchBinary: async (url) => {
+          if (blockedStage === "download" && url.endsWith("/a.mp4")) {
+            signalBlockedStage();
+            await blocked;
+            return Buffer.from("a");
+          }
+          return url.endsWith("/b.mp4") ? Buffer.from("b") : Buffer.from(png);
+        },
       });
       const paidA = await paidOrder(harness, "user_a");
       const paidB = await paidOrder(harness, "user_b");
@@ -508,26 +519,33 @@ describe("Zombie Couple Video product", () => {
       harness.provider.tasks.get("vid_2")!.status = "completed";
       harness.provider.tasks.get("vid_2")!.resultUrl = "https://example.test/b.mp4";
       if (blockedStage === "task-query") {
-        harness.provider.getTask = async (taskId) =>
-          taskId === "vid_1" && blockedStage === "task-query"
-            ? blocked.then(() => ({
-                status: "processing" as const,
-                resultUrl: undefined,
-                error: undefined,
-                costCredits: 55,
-                raw: { consumeCredits: 55 },
-              }))
-            : originalGetTask(taskId);
+        harness.provider.getTask = async (taskId) => {
+          if (taskId === "vid_1") {
+            signalBlockedStage();
+            return blocked.then(() => ({
+              status: "processing" as const,
+              resultUrl: undefined,
+              error: undefined,
+              costCredits: 55,
+              raw: { consumeCredits: 55 },
+            }));
+          }
+          return originalGetTask(taskId);
+        };
       }
       if (blockedStage === "storage") {
-        harness.storage.put = async (key: string, body: Buffer) =>
-          key === `zcv/${paidA.preview.previewId}/video.mp4`
-            ? blocked.then(() => originalPut(key, body))
-            : originalPut(key, body);
+        harness.storage.put = async (key: string, body: Buffer) => {
+          if (key === `zcv/${paidA.preview.previewId}/video.mp4`) {
+            signalBlockedStage();
+            return blocked.then(() => originalPut(key, body));
+          }
+          return originalPut(key, body);
+        };
       }
 
       const reconciliation = harness.service.reconcileOpenJobs();
-      await new Promise((resolve) => setTimeout(resolve, 60));
+      await blockedStageReached;
+      await new Promise((resolve) => setTimeout(resolve, 300));
       const orderBWhileAIsBlocked = await harness.store.getOrder(paidB.checkout.orderId);
       release();
       await reconciliation;
@@ -671,8 +689,10 @@ describe("Zombie Couple Video product", () => {
     const moderationLogs = (await harness.store.listProviderLogs()).filter(
       (log) => log.purpose === "moderation"
     );
-    expect(moderationLogs).toHaveLength(1);
-    expect(moderationLogs[0]?.costCredits).toBeNull();
+    expect(moderationLogs.map((log) => log.status)).toEqual([
+      "dispatching",
+      "unknown",
+    ]);
   });
 
   it("keeps an in-flight review from being reconciled again after the old 15s cooldown", async () => {
@@ -873,6 +893,202 @@ describe("Zombie Couple Video product", () => {
     expect(harness.provider.reviewCalls).toBe(0);
   });
 
+  it("does not mark an unstarted review unknown when the shared provider deadline has expired", async () => {
+    const harness = await createHarness({ providerTimeoutMs: 1_000 });
+    const paid = await paidOrder(harness);
+    const job = await harness.store.getJobByOrder(paid.checkout.orderId);
+    const markReviewSubmitted =
+      harness.store.markModerationReviewSubmitted.bind(harness.store);
+    harness.store.markModerationReviewSubmitted = async (...input) => {
+      const result = await markReviewSubmitted(...input);
+      expect(result).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 1_050));
+      return result;
+    };
+
+    await harness.service.reconcileJob(job!.id);
+
+    const current = await harness.store.getJob(job!.id);
+    const moderationLogs = (await harness.store.listProviderLogs()).filter(
+      (log) => log.purpose === "moderation"
+    );
+    expect(harness.provider.reviewCalls).toBe(0);
+    expect(current?.status).toBe("video_submitted");
+    expect(current?.moderationStatus).toBe("pending");
+    expect(moderationLogs.map((log) => log.status)).toEqual(["not_dispatched"]);
+  });
+
+  it("does not give a paid generation retry a fresh provider deadline", async () => {
+    const harness = await createHarness({ providerTimeoutMs: 30_000 });
+    const paid = await paidOrder(harness);
+    const job = await harness.store.getJobByOrder(paid.checkout.orderId);
+    harness.provider.getTask = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return {
+        status: "failed",
+        error: "simulated generation failure",
+        resultUrl: undefined,
+        costCredits: 55,
+        raw: { consumeCredits: 55 },
+      };
+    };
+    let releaseSubmission!: () => void;
+    let signalSubmissionStarted!: () => void;
+    const submissionGate = new Promise<void>((resolve) => {
+      releaseSubmission = resolve;
+    });
+    const submissionStarted = new Promise<void>((resolve) => {
+      signalSubmissionStarted = resolve;
+    });
+    const createVideoTask = harness.provider.createVideoTask.bind(harness.provider);
+    let submissionCalls = 0;
+    harness.provider.createVideoTask = async () => {
+      submissionCalls += 1;
+      signalSubmissionStarted();
+      await submissionGate;
+      return createVideoTask();
+    };
+
+    const startedAt = Date.now();
+    const deadline = startedAt + 500;
+    const retryResult = harness.service.reconcileJob(job!.id, deadline).then(
+      () => "resolved" as const,
+      () => "rejected" as const
+    );
+    await submissionStarted;
+    const completedWithinRouteBudget = await Promise.race([
+      retryResult,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 700)),
+    ]);
+
+    expect(completedWithinRouteBudget).toBe("rejected");
+    expect(Date.now() - startedAt).toBeLessThan(650);
+    expect(submissionCalls).toBe(1);
+    expect((await harness.store.getJob(job!.id))?.status).toBe("submission_unknown");
+    releaseSubmission();
+    await retryResult;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+
+  it("persists review dispatch before calling the provider and never repeats an unlogged result", async () => {
+    const harness = await createHarness();
+    const paid = await paidOrder(harness);
+    const job = await harness.store.getJobByOrder(paid.checkout.orderId);
+    const insertProviderLog = harness.store.insertProviderLog.bind(harness.store);
+    let failModerationLog = true;
+    harness.store.insertProviderLog = async (log) => {
+      if (
+        failModerationLog &&
+        log.purpose === "moderation" &&
+        log.status !== "dispatching"
+      ) {
+        failModerationLog = false;
+        throw new Error("moderation log insert failed");
+      }
+      return insertProviderLog(log);
+    };
+    harness.provider.reviewVideo = async () => {
+      harness.provider.reviewCalls += 1;
+      const duringCall = await harness.store.getJob(job!.id);
+      const dispatchLogs = (await harness.store.listProviderLogs()).filter(
+        (log) =>
+          log.purpose === "moderation" &&
+          log.taskId === "vid_1" &&
+          log.status === "dispatching"
+      );
+      expect(duringCall?.status).toBe("needs_check");
+      expect(duringCall?.moderationStatus).toBe("submitted");
+      expect(dispatchLogs).toHaveLength(1);
+      return { safe: true, reason: "No gore detected", costCredits: 1 };
+    };
+
+    await expect(harness.service.reconcileJob(job!.id)).rejects.toThrow(
+      "moderation log insert failed"
+    );
+    const afterLogFailure = await harness.store.getJob(job!.id);
+    const moderationLogs = (await harness.store.listProviderLogs()).filter(
+      (log) => log.purpose === "moderation"
+    );
+    harness.store.insertProviderLog = insertProviderLog;
+    harness.advanceTime(ZCV_LIMITS.reconcileCooldownMs + 1);
+    const afterRetry = await harness.service.reconcileJob(job!.id);
+
+    expect(harness.provider.reviewCalls).toBe(1);
+    expect(afterLogFailure?.status).toBe("needs_check");
+    expect(afterLogFailure?.moderationStatus).toBe("submitted");
+    expect(moderationLogs.map((log) => log.status)).toEqual(["dispatching"]);
+    expect(afterRetry?.status).toBe("needs_check");
+  });
+
+  it("keeps the newer lease when an expired reconciliation finally returns", async () => {
+    const providerTimeoutMs = 1_000_000;
+    const harness = await createHarness({ providerTimeoutMs });
+    const paid = await paidOrder(harness);
+    const job = await harness.store.getJobByOrder(paid.checkout.orderId);
+    let resolveFirst!: (
+      result: Awaited<ReturnType<typeof harness.provider.getTask>>
+    ) => void;
+    let resolveSecond!: (
+      result: Awaited<ReturnType<typeof harness.provider.getTask>>
+    ) => void;
+    const firstResult = new Promise<Awaited<ReturnType<typeof harness.provider.getTask>>>(
+      (resolve) => {
+        resolveFirst = resolve;
+      }
+    );
+    const secondResult = new Promise<Awaited<ReturnType<typeof harness.provider.getTask>>>(
+      (resolve) => {
+        resolveSecond = resolve;
+      }
+    );
+    let firstQueryStarted!: () => void;
+    let secondQueryStarted!: () => void;
+    const firstStarted = new Promise<void>((resolve) => {
+      firstQueryStarted = resolve;
+    });
+    const secondStarted = new Promise<void>((resolve) => {
+      secondQueryStarted = resolve;
+    });
+    let queryCount = 0;
+    harness.provider.getTask = async () => {
+      queryCount += 1;
+      if (queryCount === 1) {
+        firstQueryStarted();
+        return firstResult;
+      }
+      secondQueryStarted();
+      return secondResult;
+    };
+
+    const first = harness.service.reconcileJob(job!.id);
+    await firstStarted;
+    const firstToken = (await harness.store.getJob(job!.id))?.reconciliationToken;
+    harness.advanceTime(providerTimeoutMs * 2 + 1);
+    const second = harness.service.reconcileJob(job!.id);
+    await secondStarted;
+    const secondToken = (await harness.store.getJob(job!.id))?.reconciliationToken;
+    resolveFirst({
+      status: "processing",
+      resultUrl: undefined,
+      error: undefined,
+      costCredits: 55,
+      raw: { consumeCredits: 55 },
+    });
+    await first;
+
+    expect(secondToken).toBeTruthy();
+    expect(secondToken).not.toBe(firstToken);
+    expect((await harness.store.getJob(job!.id))?.reconciliationToken).toBe(secondToken);
+    resolveSecond({
+      status: "processing",
+      resultUrl: undefined,
+      error: undefined,
+      costCredits: 55,
+      raw: { consumeCredits: 55 },
+    });
+    await second;
+  });
+
   it("logs an external review when the subsequent task-ownership update loses the race", async () => {
     const harness = await createHarness();
     const paid = await paidOrder(harness);
@@ -881,7 +1097,7 @@ describe("Zombie Couple Video product", () => {
       await harness.store.updateJobForCurrentTask(
         job!.id,
         "vid_1",
-        "pending",
+        "submitted",
         { kieVideoTaskId: "vid_replacement" }
       );
       return { safe: true, reason: "No gore detected", costCredits: 0.02 };
@@ -893,9 +1109,33 @@ describe("Zombie Couple Video product", () => {
     );
 
     expect(result?.kieVideoTaskId).toBe("vid_replacement");
-    expect(result?.moderationStatus).toBe("pending");
-    expect(logs).toHaveLength(1);
-    expect(logs[0]?.costCredits).toBe(0.02);
+    expect(result?.moderationStatus).toBe("submitted");
+    expect(logs.map((log) => log.status)).toEqual(["dispatching", "approved"]);
+    expect(logs[1]?.costCredits).toBe(0.02);
+  });
+
+  it("logs an unknown external review before returning from a stale task CAS", async () => {
+    const harness = await createHarness();
+    const paid = await paidOrder(harness);
+    const job = await harness.store.getJobByOrder(paid.checkout.orderId);
+    harness.provider.reviewVideo = async () => {
+      harness.provider.reviewCalls += 1;
+      await harness.store.updateJob(job!.id, {
+        kieVideoTaskId: "vid_replacement",
+      });
+      throw new Error("review result unknown");
+    };
+
+    const result = await harness.service.reconcileJob(job!.id);
+    const unknownLogs = (await harness.store.listProviderLogs()).filter(
+      (log) =>
+        log.purpose === "moderation" &&
+        log.taskId === "vid_1" &&
+        log.status === "unknown"
+    );
+
+    expect(result?.kieVideoTaskId).toBe("vid_replacement");
+    expect(unknownLogs).toHaveLength(1);
   });
 
   it("recovers a known provider task when submission logging fails", async () => {
@@ -982,6 +1222,37 @@ describe("Zombie Couple Video product", () => {
 
     expect(calls).toBe(2);
     expect(results).toHaveLength(2);
+  });
+
+  it("does not let five unresolved jobs starve a recoverable job in the database batch", async () => {
+    const harness = await createHarness();
+    const paid = await paidOrder(harness);
+    const recoverable = await harness.store.getJobByOrder(paid.checkout.orderId);
+    await harness.store.updateJob(recoverable!.id, {
+      status: "pending",
+      kieVideoTaskId: null,
+    });
+
+    await harness.client.exec(`
+      INSERT INTO zcv_jobs (
+        id, order_id, preview_id, user_id, status, moderation_status,
+        created_at, updated_at
+      )
+      SELECT
+        'stuck_' || n, 'stuck_order_' || n, 'stuck_preview_' || n, 'user_stuck',
+        CASE WHEN n = 5 THEN 'submission_unknown' ELSE 'needs_check' END,
+        CASE WHEN n = 5 THEN 'pending' ELSE 'unknown' END,
+        NOW() - INTERVAL '10 days', NOW() - INTERVAL '10 days'
+      FROM generate_series(1, 5) AS n
+    `);
+
+    const recovered = await harness.service.reconcileOpenJobs();
+
+    expect(recovered.map((job) => job?.id)).toContain(recoverable?.id);
+    expect(harness.provider.videoCalls).toBe(2);
+    expect((await harness.store.listRecoverableJobs(10)).map((job) => job.id)).toEqual(
+      [recoverable?.id]
+    );
   });
 
   it("rejects a zero preview budget before inserting its first row", async () => {
