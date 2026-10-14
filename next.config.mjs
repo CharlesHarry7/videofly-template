@@ -11,6 +11,7 @@ if (!process.env.SKIP_ENV_VALIDATION) {
 /** @type {import("next").NextConfig} */
 const config = {
   reactStrictMode: true,
+  serverExternalPackages: ["@electric-sql/pglite"],
   pageExtensions: ["ts", "tsx"],
   images: {
     remotePatterns: [

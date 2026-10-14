@@ -12,6 +12,21 @@ Minimal working product on the VideoFly template (MIT). Upload a two-person phot
 
 This repository keeps the original MIT license notice from the VideoFly / saasfly template.
 
+## Zero-cost local preview
+
+To run the upload flow without PostgreSQL, R2, KIE, or Stripe credentials, set `ZCV_LOCAL_MOCK=true` while running Next.js in development mode. The app uses a local PGlite database and in-memory object storage. The preview is derived from the uploaded photo and carries a visible `LOCAL MOCK — NO AI MODEL CALLED` watermark; it is not an AI result. Provider calls and checkout are unavailable in this mode.
+
+```bash
+ZCV_LOCAL_MOCK=true \
+BETTER_AUTH_SECRET=local-only-placeholder \
+RESEND_API_KEY=local-only-placeholder \
+RESEND_FROM=local@example.test \
+NEXT_PUBLIC_APP_URL=http://localhost:3000 \
+pnpm dev
+```
+
+Open `http://localhost:3000/en`. Do not enable this flag outside development mode.
+
 # VideoFly 🎬
 
 一个生产级 AI 视频生成 SaaS 模板，基于 Next.js 15 构建，支持 Sora 2、Veo 3.1 等先进 AI 模型。

@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { getAuthUser } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/error";
 import { apiSuccess, handleApiError } from "@/lib/api/response";
-import { createZcvServiceFromEnv } from "@/zcv";
+import { createZcvServiceFromEnv, isZcvLocalMockMode } from "@/zcv";
 import { ZCV_LIMITS } from "@/zcv/config";
 
 function clientIp(request: Request) {
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       throw new ApiError("Image is too large", 413);
     }
     const service = createZcvServiceFromEnv();
-    const user = await getAuthUser(request);
+    const user = isZcvLocalMockMode() ? null : await getAuthUser(request);
     const result = await service.createPreview({
       ip: clientIp(request),
       file: {
@@ -61,6 +61,8 @@ export async function POST(request: Request) {
     return apiSuccess({
       previewId: result.previewId,
       status: result.status,
+      isMock: result.isMock,
+      previewImageUrl: result.previewImageUrl,
       product: result.product,
     });
   } catch (error) {

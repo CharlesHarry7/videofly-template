@@ -6,12 +6,52 @@ import { getStorage } from "@/lib/storage";
 
 import { ZCV_PRODUCT } from "./config";
 import { ZcvService } from "./service";
-import { fromPostgresJs } from "./sql";
+import { fromPostgresJs, type SqlClient } from "./sql";
 import { ZcvStore } from "./store";
 import { assertZcvStripeMode } from "./stripe-mode";
 import type { GenerationProvider, ObjectStorage, StripeGateway } from "./types";
 
 let postgresSql: ReturnType<typeof fromPostgresJs> | undefined;
+type DevMockAdapters = Awaited<
+  ReturnType<typeof import("./dev-mock-runtime")["getDevMockAdapters"]>
+>;
+let devMockAdaptersPromise: Promise<DevMockAdapters> | undefined;
+
+export function isZcvLocalMockMode() {
+  return (
+    process.env.NODE_ENV === "development" &&
+    process.env.ZCV_LOCAL_MOCK === "true"
+  );
+}
+
+function getDevMockAdapters() {
+  devMockAdaptersPromise ??= import("./dev-mock-runtime").then((runtime) =>
+    runtime.getDevMockAdapters()
+  );
+  return devMockAdaptersPromise;
+}
+
+function createDevMockSql(): SqlClient {
+  return {
+    async query(text, params) {
+      return (await getDevMockAdapters()).sql.query(text, params);
+    },
+    async transaction<T>(fn: (tx: SqlClient) => Promise<T>) {
+      return (await getDevMockAdapters()).sql.transaction(fn);
+    },
+  };
+}
+
+function createDevMockStorage(): ObjectStorage {
+  return {
+    async put(key, body, contentType) {
+      return (await getDevMockAdapters()).storage.put(key, body, contentType);
+    },
+    async get(key) {
+      return (await getDevMockAdapters()).storage.get(key);
+    },
+  };
+}
 
 function createPostgresSql() {
   if (postgresSql) return postgresSql;
@@ -160,6 +200,38 @@ export function createStripeGateway(): StripeGateway {
 }
 
 export function createZcvServiceFromEnv() {
+  if (isZcvLocalMockMode()) {
+    const disabledProvider: GenerationProvider = {
+      async createImageTask() {
+        throw new Error("Local mock mode blocks all model requests");
+      },
+      async createVideoTask() {
+        throw new Error("Local mock mode blocks all model requests");
+      },
+      async getTask() {
+        throw new Error("Local mock mode blocks all model requests");
+      },
+      async reviewVideo() {
+        throw new Error("Local mock mode blocks all model requests");
+      },
+    };
+    return new ZcvService({
+      store: new ZcvStore(createDevMockSql()),
+      provider: disabledProvider,
+      storage: createDevMockStorage(),
+      botSecret:
+        process.env.BOT_CHECK_SECRET ||
+        process.env.BETTER_AUTH_SECRET ||
+        "dev-bot-secret",
+      mediaSecret:
+        process.env.ZCV_MEDIA_TOKEN_SECRET ||
+        process.env.BETTER_AUTH_SECRET ||
+        "dev-media-secret",
+      appUrl: process.env.NEXT_PUBLIC_APP_URL,
+      mockPreviewMode: true,
+    });
+  }
+
   let provider: GenerationProvider | undefined;
   let storage: ObjectStorage | undefined;
   return new ZcvService({

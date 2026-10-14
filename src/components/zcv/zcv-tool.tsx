@@ -15,6 +15,7 @@ import { ZCV_DURATION_SECONDS, ZCV_PRICE_LABEL } from "@/zcv/product";
 type PreviewState = {
   previewId: string;
   status: string;
+  isMock?: boolean;
   previewImageUrl?: string | null;
 };
 
@@ -54,6 +55,7 @@ export function ZcvTool() {
         const next: PreviewState = {
           previewId,
           status: json.data.status,
+          isMock: json.data.isMock === true,
           previewImageUrl: json.data.previewImageUrl,
         };
         setPreview(next);
@@ -75,6 +77,7 @@ export function ZcvTool() {
         const next = {
           ...preview,
           status: json.data.status,
+          isMock: json.data.isMock === true,
           previewImageUrl: json.data.previewImageUrl,
         };
         setPreview(next);
@@ -124,6 +127,8 @@ export function ZcvTool() {
       const next = {
         previewId: json.data.previewId,
         status: json.data.status,
+        isMock: json.data.isMock === true,
+        previewImageUrl: json.data.previewImageUrl,
       };
       setPreview(next);
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next));
@@ -210,10 +215,21 @@ export function ZcvTool() {
 
       {preview?.previewImageUrl ? (
         <div className="space-y-2">
-          <p className="text-sm font-medium">Watermarked low-res preview image</p>
+          {preview.isMock ? (
+            <output className="block text-sm font-medium text-destructive">
+              Local mock preview. This shows your uploaded photo with a mock watermark; no AI model
+              was called.
+            </output>
+          ) : (
+            <p className="text-sm font-medium">Watermarked low-res preview image</p>
+          )}
           <img
             src={preview.previewImageUrl}
-            alt="Cartoon zombie couple preview"
+            alt={
+              preview.isMock
+                ? "Local mock preview derived from the uploaded photo"
+                : "Cartoon zombie couple preview"
+            }
             className="w-full max-w-md rounded-xl border"
           />
         </div>

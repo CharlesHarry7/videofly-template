@@ -89,6 +89,33 @@ describe("Zombie Couple Video product", () => {
     expect(harness.service.publicProduct().subscription).toBe(false);
   });
 
+  it("creates an explicitly marked, zero-cost local mock preview without provider calls", async () => {
+    const harness = await createHarness({ mockPreviewMode: true });
+    const preview = await readyPreview(harness);
+    const displayed = await harness.service.getPreview(
+      preview.previewId,
+      preview.claimSecret
+    );
+    const logs = (await harness.store.listProviderLogs()).filter(
+      (log) => log.previewId === preview.previewId
+    );
+
+    expect(displayed.status).toBe("ready");
+    expect(displayed.isMock).toBe(true);
+    expect(displayed.previewImageUrl).toContain("/api/zcv/media/");
+    expect(harness.provider.imageCalls).toBe(0);
+    expect(harness.provider.videoCalls).toBe(0);
+    expect(logs).toMatchObject([
+      {
+        provider: "local-mock",
+        model: "no-model",
+        purpose: "preview_image",
+        status: "mocked",
+        costCredits: 0,
+      },
+    ]);
+  });
+
   it("success page never grants", async () => {
     const harness = await createHarness();
     expect(() => harness.service.successPageGrant()).toThrowError(ZcvError);

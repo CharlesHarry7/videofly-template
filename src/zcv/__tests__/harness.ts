@@ -120,6 +120,7 @@ export function createStripeGateway(stripe = createStripeHelper()): StripeGatewa
 export async function createHarness(options: {
   providerTimeoutMs?: number;
   fetchBinary?: (url: string) => Promise<Buffer>;
+  mockPreviewMode?: boolean;
 } = {}) {
   let clock = Date.now();
   const client = new PGlite();
@@ -145,6 +146,7 @@ export async function createHarness(options: {
     now: () => clock,
     fetchBinary: options.fetchBinary || (async () => tinyPng),
     providerTimeoutMs: options.providerTimeoutMs,
+    mockPreviewMode: options.mockPreviewMode,
   });
   return {
     client,

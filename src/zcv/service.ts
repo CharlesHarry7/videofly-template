@@ -13,7 +13,7 @@ import type {
   StripeGateway,
 } from "./types";
 import { ZcvError } from "./types";
-import { createWatermarkedPreview } from "./watermark";
+import { createLocalMockPreview, createWatermarkedPreview } from "./watermark";
 
 export interface ZcvServiceOptions {
   store: ZcvStore;
@@ -29,6 +29,7 @@ export interface ZcvServiceOptions {
   ids?: () => string;
   fetchBinary?: (url: string) => Promise<Buffer>;
   providerTimeoutMs?: number;
+  mockPreviewMode?: boolean;
 }
 
 interface StripeLikeEvent {
@@ -65,6 +66,7 @@ export class ZcvService {
   private readonly ids: () => string;
   private readonly fetchBinary: (url: string) => Promise<Buffer>;
   private readonly providerTimeoutMs: number;
+  private readonly mockPreviewMode: boolean;
 
   constructor(options: ZcvServiceOptions) {
     this.store = options.store;
@@ -89,6 +91,7 @@ export class ZcvService {
       });
     this.providerTimeoutMs =
       options.providerTimeoutMs ?? ZCV_LIMITS.providerTimeoutMs;
+    this.mockPreviewMode = options.mockPreviewMode ?? false;
   }
 
   private async withDeadline<T>(
@@ -232,19 +235,21 @@ export class ZcvService {
     await this.assertBotChallenge(input.bot);
     await this.assertFreeEntryGuards(input.ip);
 
-    const day = new Date(this.now()).toISOString().slice(0, 10);
-    const budgetOk = await this.store.consumeDailyBudget({
-      day,
-      maxCount: ZCV_LIMITS.dailyPreviewBudget,
-      maxCredits: ZCV_LIMITS.dailyPreviewCreditBudget,
-      costCredits: ZCV_MODELS.image.estimatedCredits,
-    });
-    if (!budgetOk) {
-      throw new ZcvError(
-        "Free preview budget for today is exhausted",
-        "budget_exceeded",
-        429
-      );
+    if (!this.mockPreviewMode) {
+      const day = new Date(this.now()).toISOString().slice(0, 10);
+      const budgetOk = await this.store.consumeDailyBudget({
+        day,
+        maxCount: ZCV_LIMITS.dailyPreviewBudget,
+        maxCredits: ZCV_LIMITS.dailyPreviewCreditBudget,
+        costCredits: ZCV_MODELS.image.estimatedCredits,
+      });
+      if (!budgetOk) {
+        throw new ZcvError(
+          "Free preview budget for today is exhausted",
+          "budget_exceeded",
+          429
+        );
+      }
     }
 
     const previewId = this.ids();
@@ -268,6 +273,37 @@ export class ZcvService {
       updatedAt: new Date(this.now()),
     };
     await this.store.insertPreview(preview);
+
+    if (this.mockPreviewMode) {
+      const previewKey = `zcv/${previewId}/preview.jpg`;
+      const mockImage = await createLocalMockPreview(input.file.buffer);
+      await this.storage.put(previewKey, mockImage, "image/jpeg");
+      await this.store.updatePreview(previewId, {
+        intermediateImageKey: sourceKey,
+        previewImageKey: previewKey,
+        status: "ready",
+        imageCostCredits: 0,
+      });
+      const readyPreview = await this.store.getPreview(previewId);
+      if (!readyPreview) throw new Error("Local mock preview did not persist");
+      await this.store.insertProviderLog({
+        provider: "local-mock",
+        model: "no-model",
+        purpose: "preview_image",
+        status: "mocked",
+        costCredits: 0,
+        previewId,
+        raw: { mock: true, sourceDerived: true, providerCalls: 0 },
+      });
+      return {
+        previewId,
+        claimSecret,
+        status: "ready" as const,
+        isMock: true,
+        previewImageUrl: this.previewUrl(readyPreview),
+        product: this.publicProduct(),
+      };
+    }
 
     const imageUrl = this.providerFetchUrl(sourceKey);
     const task = await this.provider.createImageTask({
@@ -293,6 +329,8 @@ export class ZcvService {
       previewId,
       claimSecret,
       status: "generating" as const,
+      isMock: false,
+      previewImageUrl: null,
       product: this.publicProduct(),
     };
   }
@@ -1212,6 +1250,7 @@ export class ZcvService {
       status: preview.status,
       ownerUserId: preview.ownerUserId,
       errorMessage: preview.errorMessage,
+      isMock: this.mockPreviewMode,
       previewImageUrl: preview.previewImageKey
         ? this.previewUrl(preview)
         : null,
