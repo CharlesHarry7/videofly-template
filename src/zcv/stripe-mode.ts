@@ -1,5 +1,11 @@
 export type ZcvStripeMode = "test" | "live";
 
+export function assertZcvCheckoutMode(mode: string): void {
+  if (mode !== "payment") {
+    throw new Error("Zombie Couple Video only supports one-time payments");
+  }
+}
+
 export function assertZcvStripeMode(
   apiKey: string,
   mode: string | undefined,

@@ -117,7 +117,10 @@ export function createStripeGateway(stripe = createStripeHelper()): StripeGatewa
   };
 }
 
-export async function createHarness(options: { providerTimeoutMs?: number } = {}) {
+export async function createHarness(options: {
+  providerTimeoutMs?: number;
+  fetchBinary?: (url: string) => Promise<Buffer>;
+} = {}) {
   let clock = Date.now();
   const client = new PGlite();
   await client.exec(ZCV_SCHEMA_SQL);
@@ -140,7 +143,7 @@ export async function createHarness(options: { providerTimeoutMs?: number } = {}
     mediaSecret: TEST_MEDIA_SECRET,
     appUrl: "http://localhost:3000",
     now: () => clock,
-    fetchBinary: async () => tinyPng,
+    fetchBinary: options.fetchBinary || (async () => tinyPng),
     providerTimeoutMs: options.providerTimeoutMs,
   });
   return {
@@ -184,6 +187,7 @@ export function paidCheckoutEvent(input: {
   return {
     id: input.eventId,
     type: "checkout.session.completed",
+    livemode: false,
     data: {
       object: {
         id: input.sessionId ?? `cs_test_${input.orderId}`,

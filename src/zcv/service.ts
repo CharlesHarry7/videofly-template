@@ -21,6 +21,7 @@ export interface ZcvServiceOptions {
   storage: ObjectStorage;
   stripe?: StripeGateway;
   stripeWebhookSecret?: string;
+  stripeMode?: "test" | "live";
   botSecret: string;
   mediaSecret: string;
   appUrl?: string;
@@ -33,6 +34,7 @@ export interface ZcvServiceOptions {
 interface StripeLikeEvent {
   id: string;
   type: string;
+  livemode?: boolean;
   data?: {
     object?: {
       id?: string;
@@ -53,6 +55,7 @@ export class ZcvService {
   private readonly storage: ObjectStorage;
   private readonly stripe?: StripeGateway;
   private readonly stripeWebhookSecret?: string;
+  private readonly stripeMode: "test" | "live";
   private readonly botSecret: string;
   private readonly mediaSecret: string;
   private readonly appUrl: string;
@@ -67,6 +70,7 @@ export class ZcvService {
     this.storage = options.storage;
     this.stripe = options.stripe;
     this.stripeWebhookSecret = options.stripeWebhookSecret;
+    this.stripeMode = options.stripeMode ?? "test";
     this.botSecret = options.botSecret;
     this.mediaSecret = options.mediaSecret;
     this.appUrl = options.appUrl || "http://localhost:3000";
@@ -83,6 +87,31 @@ export class ZcvService {
       });
     this.providerTimeoutMs =
       options.providerTimeoutMs ?? ZCV_LIMITS.providerTimeoutMs;
+  }
+
+  private async withDeadline<T>(
+    operation: () => Promise<T>,
+    deadline: number,
+    description: string
+  ): Promise<T> {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      throw new Error(`${description} timed out; status unknown`);
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        operation(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`${description} timed out; status unknown`)),
+            remainingMs
+          );
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   issueBotChallenge() {
@@ -269,15 +298,31 @@ export class ZcvService {
     return this.serializePreview(preview);
   }
 
-  async completeImagePreview(previewId: string, resultUrl: string) {
+  async completeImagePreview(
+    previewId: string,
+    resultUrl: string,
+    deadline = Date.now() + this.providerTimeoutMs
+  ) {
     const preview = await this.store.getPreview(previewId);
     if (!preview) throw new ZcvError("Preview not found", "not_found", 404);
-    const image = await this.fetchBinary(resultUrl);
+    const image = await this.withDeadline(
+      () => this.fetchBinary(resultUrl),
+      deadline,
+      "Preview download"
+    );
     const intermediateKey = `zcv/${previewId}/intermediate.png`;
     const previewKey = `zcv/${previewId}/preview.jpg`;
-    await this.storage.put(intermediateKey, image, "image/png");
+    await this.withDeadline(
+      () => this.storage.put(intermediateKey, image, "image/png"),
+      deadline,
+      "Preview storage"
+    );
     const watermarked = await createWatermarkedPreview(image);
-    await this.storage.put(previewKey, watermarked, "image/jpeg");
+    await this.withDeadline(
+      () => this.storage.put(previewKey, watermarked, "image/jpeg"),
+      deadline,
+      "Preview storage"
+    );
     await this.store.updatePreview(previewId, {
       intermediateImageKey: intermediateKey,
       previewImageKey: previewKey,
@@ -299,10 +344,19 @@ export class ZcvService {
 
   async pollPreview(previewId: string, claimSecret: string) {
     const preview = await this.requirePreviewWithSecret(previewId, claimSecret);
-    if (preview.status === "ready" || !preview.kieImageTaskId) {
+    if (
+      preview.status === "ready" ||
+      preview.status === "failed" ||
+      !preview.kieImageTaskId
+    ) {
       return this.serializePreview(preview);
     }
-    const remote = await this.provider.getTask(preview.kieImageTaskId);
+    const deadline = Date.now() + this.providerTimeoutMs;
+    const remote = await this.withDeadline(
+      () => this.provider.getTask(preview.kieImageTaskId!),
+      deadline,
+      "Preview task query"
+    );
     await this.store.insertProviderLog({
       taskId: preview.kieImageTaskId,
       provider: "kie",
@@ -314,7 +368,7 @@ export class ZcvService {
       raw: remote.raw,
     });
     if (remote.status === "completed" && remote.resultUrl) {
-      await this.completeImagePreview(previewId, remote.resultUrl);
+      await this.completeImagePreview(previewId, remote.resultUrl, deadline);
       const ready = await this.store.getPreview(previewId);
       return this.serializePreview(ready!);
     }
@@ -402,7 +456,7 @@ export class ZcvService {
         `${this.appUrl}/success?orderId=${order.id}`,
       cancelUrl: input.cancelUrl || `${this.appUrl}/?cancelled=1`,
     });
-    await this.store.updateOrder(order.id, {
+    await this.store.updateOrderIfUnpaid(order.id, {
       status: "checkout_created",
       stripeCheckoutSessionId: session.id,
     });
@@ -443,6 +497,13 @@ export class ZcvService {
   }
 
   async processStripeEvent(event: StripeLikeEvent) {
+    if (event.livemode !== (this.stripeMode === "live")) {
+      throw new ZcvError(
+        "Stripe event mode does not match the configured account mode",
+        "stripe_mode_mismatch",
+        400
+      );
+    }
     const result = await this.store.transaction(async (store) => {
       const object = event.data?.object || {};
       const metadata = object.metadata || {};
@@ -473,15 +534,12 @@ export class ZcvService {
             event.type === "checkout.session.async_payment_failed" ||
             event.type === "payment_intent.payment_failed"
           ) {
-            const order = await store.getOrder(orderId);
-            if (order && !order.paidAt) {
-              await store.updateOrder(orderId, {
-                status:
-                  event.type === "checkout.session.expired"
-                    ? "cancelled"
-                    : "failed",
-              });
-            }
+            await store.updateOrderIfUnpaid(orderId, {
+              status:
+                event.type === "checkout.session.expired"
+                  ? "cancelled"
+                  : "failed",
+            });
           }
         }
         return { granted: false, reason: event.type, jobCreated: false };
@@ -585,6 +643,8 @@ export class ZcvService {
       videoKey: null,
       errorMessage: null,
       lastReconciledAt: null,
+      reconciliationToken: null,
+      reconciliationLeaseUntil: null,
       createdAt: new Date(this.now()),
       updatedAt: new Date(this.now()),
     });
@@ -702,22 +762,28 @@ export class ZcvService {
     const taskId = job.kieVideoTaskId;
 
     const reconciliationStartedAt = this.now();
+    const reconciliationToken = this.ids();
+    const leaseMs = Math.max(
+      this.providerTimeoutMs * 2,
+      ZCV_LIMITS.reconcileCooldownMs + 1_000
+    );
     const claimed = await this.store.claimJobReconciliation(
       job.id,
       taskId,
       new Date(reconciliationStartedAt),
-      new Date(reconciliationStartedAt - ZCV_LIMITS.reconcileCooldownMs)
+      new Date(reconciliationStartedAt - ZCV_LIMITS.reconcileCooldownMs),
+      reconciliationToken,
+      new Date(reconciliationStartedAt + leaseMs)
     );
     if (!claimed) return this.store.getJob(job.id);
 
-    const remote = await this.provider.getTask(taskId);
-    const stillCurrent = await this.store.updateJobForCurrentTask(
-      job.id,
-      taskId,
-      job.moderationStatus,
-      { lastReconciledAt: new Date(this.now()) }
+    try {
+    const deadline = Date.now() + this.providerTimeoutMs;
+    const remote = await this.withDeadline(
+      () => this.provider.getTask(taskId),
+      deadline,
+      "Video task query"
     );
-    if (!stillCurrent) return this.store.getJob(job.id);
     await this.store.insertProviderLog({
       taskId,
       provider: "kie",
@@ -730,64 +796,71 @@ export class ZcvService {
       jobId: job.id,
       raw: remote.raw,
     });
+    const stillCurrent = await this.store.updateJobForCurrentTask(
+      job.id,
+      taskId,
+      job.moderationStatus,
+      { lastReconciledAt: new Date(this.now()) },
+      reconciliationToken
+    );
+    if (!stillCurrent) return this.store.getJob(job.id);
 
     if (remote.status === "completed" && remote.resultUrl) {
       if (job.moderationStatus !== "approved") {
         let review: Awaited<ReturnType<GenerationProvider["reviewVideo"]>>;
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        try {
-          review = await Promise.race([
-            this.provider.reviewVideo({ videoUrl: remote.resultUrl }),
-            new Promise<never>((_, reject) => {
-              timer = setTimeout(
-                () => reject(new Error("Video review timed out; result unknown")),
-                this.providerTimeoutMs
-              );
-            }),
-          ]);
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : "Video review result unknown";
-          const transitioned = await this.store.updateJobForCurrentTask(
-            job.id,
-            taskId,
-            job.moderationStatus,
-            {
-              status: "needs_check",
-              moderationStatus: "unknown",
-              errorMessage: "Safety review could not be confirmed",
-            }
-          );
-          if (!transitioned) return this.store.getJob(job.id);
+        const previousReview = await this.store.getModerationResult(taskId);
+        if (previousReview) {
+          review = previousReview;
+        } else {
+          try {
+            review = await this.withDeadline(
+              () => this.provider.reviewVideo({ videoUrl: remote.resultUrl! }),
+              deadline,
+              "Video review"
+            );
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : "Video review result unknown";
+            const transitioned = await this.store.updateJobForCurrentTask(
+              job.id,
+              taskId,
+              job.moderationStatus,
+              {
+                status: "needs_check",
+                moderationStatus: "unknown",
+                errorMessage: "Safety review could not be confirmed",
+              },
+              reconciliationToken
+            );
+            if (!transitioned) return this.store.getJob(job.id);
+            await this.store.insertProviderLog({
+              taskId,
+              provider: "kie",
+              model: ZCV_MODELS.moderation.providerModelId,
+              purpose: "moderation",
+              status: "unknown",
+              costCredits: null,
+              orderId: job.orderId,
+              previewId: job.previewId,
+              jobId: job.id,
+              raw: { message },
+            });
+            return this.store.getJob(job.id);
+          }
+
           await this.store.insertProviderLog({
             taskId,
             provider: "kie",
             model: ZCV_MODELS.moderation.providerModelId,
             purpose: "moderation",
-            status: "unknown",
-            costCredits: null,
+            status: review.safe ? "approved" : "rejected",
+            costCredits: review.costCredits ?? null,
             orderId: job.orderId,
             previewId: job.previewId,
             jobId: job.id,
-            raw: { message },
+            raw: review.raw ?? { reason: review.reason },
           });
-          return this.store.getJob(job.id);
-        } finally {
-          if (timer) clearTimeout(timer);
         }
-
-        await this.store.insertProviderLog({
-          taskId,
-          provider: "kie",
-          model: ZCV_MODELS.moderation.providerModelId,
-          purpose: "moderation",
-          status: review.safe ? "approved" : "rejected",
-          costCredits: review.costCredits ?? null,
-          orderId: job.orderId,
-          previewId: job.previewId,
-          jobId: job.id,
-          raw: review.raw ?? { reason: review.reason },
-        });
 
         if (!review.safe) {
           if (job.attemptCount < job.maxAttempts) {
@@ -800,44 +873,49 @@ export class ZcvService {
                 moderationStatus: "rejected",
                 kieVideoTaskId: null,
                 errorMessage: "Video did not pass the safety review",
-              }
+              },
+              reconciliationToken
             );
             if (!transitioned) return this.store.getJob(job.id);
             return this.startOrRecoverJob(job.id);
           }
-          const transitioned = await this.store.updateJobForCurrentTask(
-            job.id,
-            taskId,
-            job.moderationStatus,
-            {
-              status: "refund_pending",
-              moderationStatus: "rejected",
-              errorMessage:
-                "Video did not pass the safety review; refund required",
-            }
+          const transitioned = await this.store.markRefundPending(
+            job,
+            "Video did not pass the safety review; refund required",
+            "rejected",
+            reconciliationToken
           );
           if (!transitioned) return this.store.getJob(job.id);
-          await this.store.updateOrder(job.orderId, { status: "refund_pending" });
           return this.store.getJob(job.id);
         }
         const approved = await this.store.updateJobForCurrentTask(
           job.id,
           taskId,
           job.moderationStatus,
-          { moderationStatus: "approved" }
+          { moderationStatus: "approved" },
+          reconciliationToken
         );
         if (!approved) return this.store.getJob(job.id);
       }
 
-      const video = await this.fetchBinary(remote.resultUrl);
+      const video = await this.withDeadline(
+        () => this.fetchBinary(remote.resultUrl!),
+        deadline,
+        "Video download"
+      );
       const videoKey = `zcv/${job.previewId}/video.mp4`;
-      await this.storage.put(videoKey, video, "video/mp4");
+      await this.withDeadline(
+        () => this.storage.put(videoKey, video, "video/mp4"),
+        deadline,
+        "Video storage"
+      );
       const delivered = await this.store.completeDelivery(
         job.id,
         job.orderId,
         taskId,
         videoKey,
-        new Date(this.now())
+        new Date(this.now()),
+        reconciliationToken
       );
       if (!delivered) return this.store.getJob(job.id);
       return this.store.getJob(job.id);
@@ -854,67 +932,78 @@ export class ZcvService {
             status: "pending",
             moderationStatus: "pending",
             errorMessage: remote.error || "Video generation failed",
-          }
+          },
+          reconciliationToken
         );
         if (!transitioned) return this.store.getJob(job.id);
         return this.startOrRecoverJob(job.id);
       }
-      const transitioned = await this.store.updateJobForCurrentTask(
-        job.id,
-        taskId,
+      const transitioned = await this.store.markRefundPending(
+        job,
+        remote.error || "Video generation failed",
         job.moderationStatus,
-        {
-          status: "refund_pending",
-          errorMessage: remote.error || "Video generation failed",
-        }
+        reconciliationToken
       );
       if (!transitioned) return this.store.getJob(job.id);
-      await this.store.updateOrder(job.orderId, { status: "refund_pending" });
     }
 
     return this.store.getJob(job.id);
+    } finally {
+      await this.store.releaseJobReconciliation(job.id, reconciliationToken);
+    }
   }
 
   async reconcileOpenJobs() {
-    const jobs = await this.store.listRecoverableJobs();
-    const results = [];
-    for (const job of jobs) {
-      try {
-        results.push(await this.reconcileJob(job.id));
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Unknown reconciliation error";
-        if (job.kieVideoTaskId) {
-          await this.store.updateJobForCurrentTask(
-            job.id,
-            job.kieVideoTaskId,
-            job.moderationStatus,
-            {
+    const jobs = await this.store.listRecoverableJobs(4);
+    const results: Array<JobRecord | null> = new Array(jobs.length).fill(null);
+    let nextIndex = 0;
+    const worker = async () => {
+      while (true) {
+        const index = nextIndex++;
+        const job = jobs[index];
+        if (!job) return;
+        try {
+          results[index] = await this.reconcileJob(job.id);
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Unknown reconciliation error";
+          if (job.kieVideoTaskId) {
+            await this.store.updateJobForCurrentTask(
+              job.id,
+              job.kieVideoTaskId,
+              job.moderationStatus,
+              {
+                errorMessage: message,
+                lastReconciledAt: new Date(this.now()),
+              }
+            );
+          } else {
+            await this.store.updateJob(job.id, {
               errorMessage: message,
               lastReconciledAt: new Date(this.now()),
-            }
-          );
-        } else {
-          await this.store.updateJob(job.id, {
-            errorMessage: message,
-            lastReconciledAt: new Date(this.now()),
+            });
+          }
+          await this.store.insertProviderLog({
+            taskId: job.kieVideoTaskId ?? undefined,
+            provider: "kie",
+            model: ZCV_MODELS.video.providerModelId,
+            purpose: "reconcile",
+            status: "query_error",
+            costCredits: null,
+            orderId: job.orderId,
+            previewId: job.previewId,
+            jobId: job.id,
+            raw: { message },
           });
+          results[index] = null;
         }
-        await this.store.insertProviderLog({
-          taskId: job.kieVideoTaskId ?? undefined,
-          provider: "kie",
-          model: ZCV_MODELS.video.providerModelId,
-          purpose: "reconcile",
-          status: "query_error",
-          costCredits: null,
-          orderId: job.orderId,
-          previewId: job.previewId,
-          jobId: job.id,
-          raw: { message },
-        });
-        results.push(null);
       }
-    }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(4, jobs.length) }, () => worker())
+    );
     return results;
   }
 

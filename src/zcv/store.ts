@@ -96,6 +96,10 @@ function mapJob(row: Record<string, unknown>): JobRecord {
     lastReconciledAt: row.last_reconciled_at
       ? asDate(row.last_reconciled_at)
       : null,
+    reconciliationToken: asNullableString(row.reconciliation_token),
+    reconciliationLeaseUntil: row.reconciliation_lease_until
+      ? asDate(row.reconciliation_lease_until)
+      : null,
     createdAt: asDate(row.created_at),
     updatedAt: asDate(row.updated_at),
   };
@@ -327,6 +331,112 @@ export class ZcvStore {
     );
   }
 
+  async updateOrderIfUnpaid(
+    id: string,
+    patch: Partial<
+      Pick<
+        OrderRecord,
+        | "status"
+        | "paidAt"
+        | "deliveredAt"
+        | "stripeCheckoutSessionId"
+        | "stripePaymentIntentId"
+        | "jobId"
+      >
+    >
+  ): Promise<boolean> {
+    const columnByField = {
+      status: "status",
+      paidAt: "paid_at",
+      deliveredAt: "delivered_at",
+      stripeCheckoutSessionId: "stripe_checkout_session_id",
+      stripePaymentIntentId: "stripe_payment_intent_id",
+      jobId: "job_id",
+    } as const;
+    const entries = Object.entries(patch).filter(
+      ([field]) => field in columnByField
+    ) as Array<[keyof typeof columnByField, unknown]>;
+    if (entries.length === 0) return false;
+    const assignments = entries.map(
+      ([field], index) => `${columnByField[field]}=$${index + 2}`
+    );
+    const rows = await this.sql.query(
+      `UPDATE zcv_orders SET ${assignments.join(", ")}, updated_at=NOW()
+       WHERE id=$1 AND paid_at IS NULL
+       RETURNING id`,
+      [id, ...entries.map(([, value]) => value)]
+    );
+    return rows.length > 0;
+  }
+
+  async markRefundPending(
+    job: Pick<JobRecord, "id" | "orderId" | "kieVideoTaskId" | "moderationStatus">,
+    errorMessage: string,
+    moderationStatus: JobRecord["moderationStatus"] = job.moderationStatus,
+    reconciliationToken?: string
+  ): Promise<boolean> {
+    if (!job.kieVideoTaskId) return false;
+    return this.transaction(async (store) => {
+      const tokenCondition = reconciliationToken
+        ? "AND reconciliation_token=$7"
+        : "";
+      const params: unknown[] = [
+        job.id,
+        job.orderId,
+        job.kieVideoTaskId,
+        moderationStatus,
+        errorMessage,
+        job.moderationStatus,
+      ];
+      if (reconciliationToken) params.push(reconciliationToken);
+      const jobRows = await store.sql.query(
+        `UPDATE zcv_jobs
+         SET status='refund_pending', moderation_status=$4,
+             error_message=$5, updated_at=NOW()
+         WHERE id=$1 AND order_id=$2 AND kie_video_task_id=$3
+           AND status='video_submitted' AND moderation_status=$6 ${tokenCondition}
+         RETURNING id`,
+        params
+      );
+      if (jobRows.length === 0) return false;
+      const orderRows = await store.sql.query(
+        `UPDATE zcv_orders SET status='refund_pending', updated_at=NOW()
+         WHERE id=$1 AND paid_at IS NOT NULL AND status IN ('paid','refund_pending')
+         RETURNING id`,
+        [job.orderId]
+      );
+      if (orderRows.length === 0) {
+        throw new Error("Cannot mark refund pending for an unpaid or missing order");
+      }
+      return true;
+    });
+  }
+
+  async getModerationResult(
+    taskId: string
+  ): Promise<{ safe: boolean; reason: string; costCredits: number | null } | null> {
+    const rows = await this.sql.query(
+      `SELECT status, cost_credits, raw FROM zcv_provider_logs
+       WHERE task_id=$1 AND purpose='moderation' AND status IN ('approved','rejected')
+       ORDER BY id DESC LIMIT 1`,
+      [taskId]
+    );
+    if (!rows[0]) return null;
+    const raw =
+      typeof rows[0].raw === "string"
+        ? JSON.parse(rows[0].raw)
+        : rows[0].raw;
+    const reason =
+      raw && typeof raw === "object" && "reason" in raw
+        ? String((raw as { reason?: unknown }).reason ?? "")
+        : "Previously reviewed result";
+    return {
+      safe: rows[0].status === "approved",
+      reason,
+      costCredits: asNullableNumber(rows[0].cost_credits),
+    };
+  }
+
   async insertJobIfAbsent(job: JobRecord): Promise<JobRecord> {
     const rows = await this.sql.query(
       `INSERT INTO zcv_jobs (
@@ -384,23 +494,47 @@ export class ZcvStore {
     id: string,
     taskId: string,
     now: Date,
-    cooldownBefore: Date
+    cooldownBefore: Date,
+    reconciliationToken: string,
+    leaseUntil: Date
   ): Promise<boolean> {
     const rows = await this.sql.query(
       `UPDATE zcv_jobs
-       SET status='video_submitted', last_reconciled_at=$3, updated_at=NOW()
+       SET status='video_submitted', last_reconciled_at=$3,
+           reconciliation_token=$5, reconciliation_lease_until=$6,
+           updated_at=NOW()
        WHERE id=$1 AND kie_video_task_id=$2
          AND status IN ('video_submitted','submission_unknown')
          AND (last_reconciled_at IS NULL OR last_reconciled_at <= $4)
+         AND (reconciliation_token IS NULL OR reconciliation_lease_until <= $3)
        RETURNING id`,
-      [id, taskId, now, cooldownBefore]
+      [id, taskId, now, cooldownBefore, reconciliationToken, leaseUntil]
     );
     return rows.length > 0;
   }
 
-  async listRecoverableJobs(): Promise<JobRecord[]> {
+  async releaseJobReconciliation(
+    id: string,
+    reconciliationToken: string
+  ): Promise<void> {
+    await this.sql.query(
+      `UPDATE zcv_jobs
+       SET reconciliation_token=NULL, reconciliation_lease_until=NULL,
+           updated_at=NOW()
+       WHERE id=$1 AND reconciliation_token=$2`,
+      [id, reconciliationToken]
+    );
+  }
+
+  async listRecoverableJobs(limit = 4): Promise<JobRecord[]> {
     const rows = await this.sql.query(
-      `SELECT * FROM zcv_jobs WHERE status IN ('pending', 'submitting', 'submission_unknown', 'video_submitted', 'needs_check')`
+      `SELECT * FROM zcv_jobs
+       WHERE status IN ('pending', 'submitting', 'submission_unknown', 'video_submitted', 'needs_check')
+         AND (status <> 'submitting' OR updated_at < NOW() - INTERVAL '2 minutes')
+         AND (reconciliation_token IS NULL OR reconciliation_lease_until <= NOW())
+       ORDER BY last_reconciled_at ASC NULLS FIRST, created_at ASC
+       LIMIT $1`,
+      [limit]
     );
     return rows.map(mapJob);
   }
@@ -505,7 +639,8 @@ export class ZcvStore {
         | "errorMessage"
         | "lastReconciledAt"
       >
-    >
+    >,
+    reconciliationToken?: string
   ): Promise<boolean> {
     const columnByField = {
       status: "status",
@@ -525,13 +660,23 @@ export class ZcvStore {
     const assignments = entries.map(
       ([field], index) => `${columnByField[field]}=$${index + 4}`
     );
+    const tokenCondition = reconciliationToken
+      ? `AND reconciliation_token=$${entries.length + 4}`
+      : "";
+    const params: unknown[] = [
+      id,
+      taskId,
+      expectedModerationStatus,
+      ...entries.map(([, value]) => value),
+    ];
+    if (reconciliationToken) params.push(reconciliationToken);
     const rows = await this.sql.query(
       `UPDATE zcv_jobs
        SET ${assignments.join(", ")}, updated_at=NOW()
        WHERE id=$1 AND kie_video_task_id=$2 AND status='video_submitted'
-         AND moderation_status=$3
+         AND moderation_status=$3 ${tokenCondition}
        RETURNING id`,
-      [id, taskId, expectedModerationStatus, ...entries.map(([, value]) => value)]
+      params
     );
     return rows.length > 0;
   }
@@ -541,17 +686,24 @@ export class ZcvStore {
     orderId: string,
     expectedTaskId: string,
     videoKey: string,
-    deliveredAt: Date
+    deliveredAt: Date,
+    reconciliationToken?: string
   ): Promise<boolean> {
     return this.transaction(async (store) => {
+      const tokenCondition = reconciliationToken
+        ? "AND reconciliation_token=$4"
+        : "";
       const rows = await store.sql.query(
         `UPDATE zcv_jobs
          SET status='completed', phase='done', video_key=$3,
              error_message=NULL, updated_at=NOW()
          WHERE id=$1 AND kie_video_task_id=$2 AND status='video_submitted'
            AND moderation_status='approved'
+           ${tokenCondition}
          RETURNING id`,
-        [jobId, expectedTaskId, videoKey]
+        reconciliationToken
+          ? [jobId, expectedTaskId, videoKey, reconciliationToken]
+          : [jobId, expectedTaskId, videoKey]
       );
       if (rows.length === 0) return false;
       await store.updateOrder(orderId, { deliveredAt });

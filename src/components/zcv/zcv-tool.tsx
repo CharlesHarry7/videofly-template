@@ -64,20 +64,24 @@ export function ZcvTool() {
 
   useEffect(() => {
     if (!preview?.previewId) return;
-    if (preview.status === "ready") return;
+    if (preview.status === "ready" || preview.status === "failed") return;
     const timer = window.setInterval(async () => {
-      const response = await fetch(
-        `/api/zcv/preview/${preview.previewId}`
-      );
-      if (!response.ok) return;
-      const json = await response.json();
-      const next = {
-        ...preview,
-        status: json.data.status,
-        previewImageUrl: json.data.previewImageUrl,
-      };
-      setPreview(next);
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      try {
+        const response = await fetch(
+          `/api/zcv/preview/${preview.previewId}`
+        );
+        if (!response.ok) return;
+        const json = await response.json();
+        const next = {
+          ...preview,
+          status: json.data.status,
+          previewImageUrl: json.data.previewImageUrl,
+        };
+        setPreview(next);
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // Keep the last state and retry transient network errors.
+      }
     }, 2500);
     return () => window.clearInterval(timer);
   }, [preview]);
@@ -214,9 +218,15 @@ export function ZcvTool() {
           />
         </div>
       ) : preview ? (
-        <p className="text-sm text-muted-foreground">
-          Generating your cartoon zombie preview image...
-        </p>
+        preview.status === "failed" ? (
+          <output className="block text-sm text-destructive">
+            We could not create this preview. Please upload your photo and try again.
+          </output>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Generating your cartoon zombie preview image...
+          </p>
+        )
       ) : null}
     </div>
   );

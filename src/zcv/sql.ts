@@ -52,9 +52,14 @@ CREATE TABLE IF NOT EXISTS zcv_jobs (
   video_key TEXT,
   error_message TEXT,
   last_reconciled_at TIMESTAMPTZ,
+  reconciliation_token TEXT,
+  reconciliation_lease_until TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE zcv_jobs ADD COLUMN IF NOT EXISTS reconciliation_token TEXT;
+ALTER TABLE zcv_jobs ADD COLUMN IF NOT EXISTS reconciliation_lease_until TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS zcv_stripe_events (
   event_id TEXT PRIMARY KEY,

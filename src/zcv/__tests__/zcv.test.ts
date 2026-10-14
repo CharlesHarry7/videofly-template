@@ -5,7 +5,7 @@ import { ZCV_LIMITS, ZCV_PRODUCT } from "../config";
 import { hashClaimSecret } from "../crypto";
 import { createMediaToken } from "../media";
 import { ZcvError } from "../types";
-import { assertZcvStripeMode } from "../stripe-mode";
+import { assertZcvCheckoutMode, assertZcvStripeMode } from "../stripe-mode";
 import {
   createHarness,
   paidCheckoutEvent,
@@ -68,6 +68,10 @@ describe("Zombie Couple Video product", () => {
     expect(assertZcvStripeMode("sk_test_zcv", undefined, undefined)).toBe(
       "test"
     );
+    expect(() => assertZcvCheckoutMode("subscription")).toThrow(
+      "only supports one-time payments"
+    );
+    expect(() => assertZcvCheckoutMode("payment")).not.toThrow();
   });
   it("server decides amount, currency, product and owner", async () => {
     const harness = await createHarness();
@@ -413,6 +417,243 @@ describe("Zombie Couple Video product", () => {
     expect(harness.storage.files.has(`zcv/${paid.preview.previewId}/video.mp4`)).toBe(false);
   });
 
+  it("keeps gore-refund order and job atomic and reuses a logged moderation result", async () => {
+    const harness = await createHarness();
+    harness.provider.reviewResults = [
+      { safe: false, reason: "visible wound", costCredits: 0.02 },
+      { safe: false, reason: "visible blood", costCredits: 0.02 },
+    ];
+    const paid = await paidOrder(harness);
+    const job = await harness.store.getJobByOrder(paid.checkout.orderId);
+    await harness.service.reconcileJob(job!.id);
+
+    await harness.client.exec(
+      "ALTER TABLE zcv_orders ADD CONSTRAINT reject_refund_pending CHECK (status <> 'refund_pending')"
+    );
+    harness.advanceTime(ZCV_LIMITS.reconcileCooldownMs + 1);
+    await expect(harness.service.reconcileJob(job!.id)).rejects.toThrow();
+
+    expect((await harness.store.getJob(job!.id))?.status).toBe("video_submitted");
+    expect((await harness.store.getOrder(paid.checkout.orderId))?.status).toBe("paid");
+    expect(harness.provider.reviewCalls).toBe(2);
+
+    await harness.client.exec(
+      "ALTER TABLE zcv_orders DROP CONSTRAINT reject_refund_pending"
+    );
+    harness.advanceTime(ZCV_LIMITS.reconcileCooldownMs + 1);
+    await harness.service.reconcileJob(job!.id);
+
+    expect((await harness.store.getJob(job!.id))?.status).toBe("refund_pending");
+    expect((await harness.store.getOrder(paid.checkout.orderId))?.status).toBe(
+      "refund_pending"
+    );
+    expect(harness.provider.reviewCalls).toBe(2);
+  });
+
+  it("keeps generation-failure refund state atomic when the order update is rejected", async () => {
+    const harness = await createHarness();
+    harness.provider.autoCompleteVideo = false;
+    const paid = await paidOrder(harness);
+    const job = await harness.store.getJobByOrder(paid.checkout.orderId);
+    harness.provider.tasks.get("vid_1")!.status = "failed";
+    await harness.service.reconcileJob(job!.id);
+    harness.provider.tasks.get("vid_2")!.status = "failed";
+
+    await harness.client.exec(
+      "ALTER TABLE zcv_orders ADD CONSTRAINT reject_refund_pending CHECK (status <> 'refund_pending')"
+    );
+    harness.advanceTime(ZCV_LIMITS.reconcileCooldownMs + 1);
+    await expect(harness.service.reconcileJob(job!.id)).rejects.toThrow();
+    expect((await harness.store.getJob(job!.id))?.status).toBe("video_submitted");
+    expect((await harness.store.getOrder(paid.checkout.orderId))?.status).toBe("paid");
+
+    await harness.client.exec(
+      "ALTER TABLE zcv_orders DROP CONSTRAINT reject_refund_pending"
+    );
+    harness.advanceTime(ZCV_LIMITS.reconcileCooldownMs + 1);
+    await harness.service.reconcileJob(job!.id);
+    expect((await harness.store.getJob(job!.id))?.status).toBe("refund_pending");
+    expect((await harness.store.getOrder(paid.checkout.orderId))?.status).toBe(
+      "refund_pending"
+    );
+    expect(harness.provider.videoCalls).toBe(2);
+  });
+
+  it.each(["task-query", "download", "storage"] as const)(
+    "bounds a hung %s operation so later paid jobs still reconcile",
+    async (blockedStage) => {
+      let release!: () => void;
+      const blocked = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const harness = await createHarness({
+        providerTimeoutMs: 25,
+        fetchBinary: async (url) =>
+          url.endsWith("/a.mp4")
+            ? blocked.then(() => Buffer.from("a"))
+            : url.endsWith("/b.mp4")
+              ? Buffer.from("b")
+              : Buffer.from(png),
+      });
+      const paidA = await paidOrder(harness, "user_a");
+      const paidB = await paidOrder(harness, "user_b");
+      const jobA = await harness.store.getJobByOrder(paidA.checkout.orderId);
+      const jobB = await harness.store.getJobByOrder(paidB.checkout.orderId);
+      const originalGetTask = harness.provider.getTask.bind(harness.provider);
+      const originalPut = harness.storage.put.bind(harness.storage);
+
+      harness.store.listRecoverableJobs = async () => [jobA!, jobB!];
+      harness.provider.tasks.get("vid_1")!.status = "completed";
+      harness.provider.tasks.get("vid_1")!.resultUrl = "https://example.test/a.mp4";
+      harness.provider.tasks.get("vid_2")!.status = "completed";
+      harness.provider.tasks.get("vid_2")!.resultUrl = "https://example.test/b.mp4";
+      if (blockedStage === "task-query") {
+        harness.provider.getTask = async (taskId) =>
+          taskId === "vid_1" && blockedStage === "task-query"
+            ? blocked.then(() => ({
+                status: "processing" as const,
+                resultUrl: undefined,
+                error: undefined,
+                costCredits: 55,
+                raw: { consumeCredits: 55 },
+              }))
+            : originalGetTask(taskId);
+      }
+      if (blockedStage === "storage") {
+        harness.storage.put = async (key: string, body: Buffer) =>
+          key === `zcv/${paidA.preview.previewId}/video.mp4`
+            ? blocked.then(() => originalPut(key, body))
+            : originalPut(key, body);
+      }
+
+      const reconciliation = harness.service.reconcileOpenJobs();
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      const orderBWhileAIsBlocked = await harness.store.getOrder(paidB.checkout.orderId);
+      release();
+      await reconciliation;
+      expect(orderBWhileAIsBlocked?.deliveredAt).toBeTruthy();
+      harness.provider.getTask = originalGetTask;
+      harness.storage.put = originalPut;
+    }
+  );
+
+  it("does not query a terminal failed free preview again", async () => {
+    const harness = await createHarness();
+    harness.provider.autoCompleteImage = false;
+    const created = await readyPreview(harness);
+    const task = harness.provider.tasks.get("img_1")!;
+    task.status = "failed";
+
+    const failed = await harness.service.pollPreview(created.previewId, created.claimSecret);
+    const queryCount = harness.provider.queryCalls;
+    const repeated = await harness.service.pollPreview(created.previewId, created.claimSecret);
+
+    expect(failed.status).toBe("failed");
+    expect(repeated.status).toBe("failed");
+    expect(harness.provider.queryCalls).toBe(queryCount);
+  });
+
+  it("does not let a late Stripe checkout response overwrite a paid order", async () => {
+    const harness = await createHarness();
+    const preview = await readyPreview(harness, "user_a");
+    let releaseCheckout!: () => void;
+    let checkoutStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      checkoutStarted = resolve;
+    });
+    const checkoutGate = new Promise<void>((resolve) => {
+      releaseCheckout = resolve;
+    });
+    harness.stripeGateway.createCheckoutSession = async (input) => {
+      checkoutStarted();
+      await checkoutGate;
+      return {
+        id: `cs_test_${input.orderId}`,
+        url: `https://checkout.stripe.test/${input.orderId}`,
+      };
+    };
+    const checkoutRequest = harness.service.createCheckout({
+      userId: "user_a",
+      previewId: preview.previewId,
+      claimSecret: preview.claimSecret,
+    });
+    await started;
+    const order = (await harness.store.listOrdersForUser("user_a"))[0]!;
+    const signed = signedWebhook(
+      harness.stripe,
+      paidCheckoutEvent({ eventId: "evt_paid_before_checkout_return", orderId: order.id, userId: "user_a" })
+    );
+    await harness.service.handleStripeWebhook(signed.payload, signed.signature);
+    releaseCheckout();
+    await checkoutRequest;
+
+    expect((await harness.store.getOrder(order.id))?.status).toBe("paid");
+    expect((await harness.store.getOrder(order.id))?.paidAt).toBeTruthy();
+  });
+
+  it("does not let a delayed failed-payment event regress a paid order", async () => {
+    const harness = await createHarness();
+    const preview = await readyPreview(harness, "user_a");
+    const checkout = await harness.service.createCheckout({
+      userId: "user_a",
+      previewId: preview.previewId,
+      claimSecret: preview.claimSecret,
+    });
+    const staleFailureRead = await harness.store.getOrder(checkout.orderId);
+    expect(staleFailureRead?.paidAt).toBeNull();
+    const paidSigned = signedWebhook(
+      harness.stripe,
+      paidCheckoutEvent({ eventId: "evt_wins_race", orderId: checkout.orderId, userId: "user_a" })
+    );
+    await harness.service.handleStripeWebhook(paidSigned.payload, paidSigned.signature);
+    const didRegress = await harness.store.updateOrderIfUnpaid(checkout.orderId, {
+      status: "cancelled",
+    });
+    const staleFailure = {
+      ...paidCheckoutEvent({
+        eventId: "evt_delayed_cancel_after_paid",
+        orderId: checkout.orderId,
+        userId: "user_a",
+        paymentStatus: "unpaid",
+      }),
+      type: "checkout.session.expired",
+    };
+    const failedSigned = signedWebhook(harness.stripe, staleFailure);
+    await harness.service.handleStripeWebhook(
+      failedSigned.payload,
+      failedSigned.signature
+    );
+
+    expect(didRegress).toBe(false);
+    expect((await harness.store.getOrder(checkout.orderId))?.status).toBe("paid");
+    expect((await harness.store.getOrder(checkout.orderId))?.paidAt).toBeTruthy();
+  });
+
+  it("rejects Stripe events from the wrong configured live/test mode", async () => {
+    const harness = await createHarness();
+    const preview = await readyPreview(harness, "user_a");
+    const checkout = await harness.service.createCheckout({
+      userId: "user_a",
+      previewId: preview.previewId,
+      claimSecret: preview.claimSecret,
+    });
+    const event = {
+      ...paidCheckoutEvent({
+        eventId: "evt_wrong_livemode",
+        orderId: checkout.orderId,
+        userId: "user_a",
+      }),
+      livemode: true,
+    };
+    const signed = signedWebhook(harness.stripe, event);
+
+    await expect(
+      harness.service.handleStripeWebhook(signed.payload, signed.signature)
+    ).rejects.toMatchObject({ code: "stripe_mode_mismatch" });
+    expect((await harness.store.getOrder(checkout.orderId))?.paidAt).toBeNull();
+    expect(await harness.store.getJobByOrder(checkout.orderId)).toBeNull();
+  });
+
   it("does not repeat a billed moderation request when its result is unknown", async () => {
     const harness = await createHarness();
     harness.provider.reviewError = new Error("moderation timed out");
@@ -478,7 +719,7 @@ describe("Zombie Couple Video product", () => {
     expect(retried?.status).toBe("video_submitted");
   });
 
-  it("does not let a late old-task review clear a newer task after the cooldown expires", async () => {
+  it("keeps an in-flight review exclusive after reconciliation cooldown expires", async () => {
     const harness = await createHarness();
     harness.provider.autoCompleteVideo = false;
     const paid = await paidOrder(harness);
@@ -511,8 +752,11 @@ describe("Zombie Couple Video product", () => {
     harness.advanceTime(ZCV_LIMITS.reconcileCooldownMs + 1);
     await harness.service.reconcileJob(job!.id);
 
-    const newerTask = await harness.store.getJob(job!.id);
-    expect(newerTask?.kieVideoTaskId).toBe("vid_2");
+    const stillReviewing = await harness.store.getJob(job!.id);
+    expect(harness.provider.reviewCalls).toBe(1);
+    expect(harness.provider.videoCalls).toBe(1);
+    expect(stillReviewing?.kieVideoTaskId).toBe("vid_1");
+    expect(stillReviewing?.attemptCount).toBe(1);
     releaseFirstReview({ safe: false, reason: "visible blood" });
     await firstReconciliation;
 
@@ -521,6 +765,137 @@ describe("Zombie Couple Video product", () => {
     expect(finalJob?.attemptCount).toBe(2);
     expect(finalJob?.kieVideoTaskId).toBe("vid_2");
     expect(finalJob?.status).toBe("video_submitted");
+  });
+
+  it("prevents a second paid review when an older task query outlives the cooldown", async () => {
+    const harness = await createHarness({ providerTimeoutMs: 120_000 });
+    const paid = await paidOrder(harness);
+    const job = await harness.store.getJobByOrder(paid.checkout.orderId);
+    const task = harness.provider.tasks.get("vid_1")!;
+    task.status = "completed";
+    task.resultUrl = "https://example.test/video.mp4";
+
+    let releaseFirstQuery!: (
+      result: Awaited<ReturnType<typeof harness.provider.getTask>>
+    ) => void;
+    let signalFirstQuery!: () => void;
+    const firstQueryStarted = new Promise<void>((resolve) => {
+      signalFirstQuery = resolve;
+    });
+    const blockedFirstQuery = new Promise<
+      Awaited<ReturnType<typeof harness.provider.getTask>>
+    >((resolve) => {
+      releaseFirstQuery = resolve;
+    });
+    const originalGetTask = harness.provider.getTask.bind(harness.provider);
+    let queryCount = 0;
+    harness.provider.getTask = async (taskId) => {
+      queryCount += 1;
+      if (queryCount === 1) {
+        signalFirstQuery();
+        return blockedFirstQuery;
+      }
+      return originalGetTask(taskId);
+    };
+
+    let releaseReview!: (result: { safe: boolean; reason: string }) => void;
+    let signalFirstReview!: () => void;
+    let signalSecondReview!: () => void;
+    const firstReviewStarted = new Promise<void>((resolve) => {
+      signalFirstReview = resolve;
+    });
+    const secondReviewStarted = new Promise<void>((resolve) => {
+      signalSecondReview = resolve;
+    });
+    const blockedReview = new Promise<{ safe: boolean; reason: string }>(
+      (resolve) => {
+        releaseReview = resolve;
+      }
+    );
+    harness.provider.reviewVideo = async () => {
+      harness.provider.reviewCalls += 1;
+      if (harness.provider.reviewCalls === 1) signalFirstReview();
+      if (harness.provider.reviewCalls === 2) signalSecondReview();
+      return blockedReview;
+    };
+
+    const first = harness.service.reconcileJob(job!.id);
+    await firstQueryStarted;
+    harness.advanceTime(ZCV_LIMITS.reconcileCooldownMs + 1);
+    let secondSettled = false;
+    const second = harness.service.reconcileJob(job!.id).finally(() => {
+      secondSettled = true;
+    });
+    const secondProgress = await Promise.race([
+      firstReviewStarted.then(() => "review_started" as const),
+      second.then(() => "second_settled" as const),
+    ]);
+
+    releaseFirstQuery({
+      status: "completed",
+      resultUrl: "https://example.test/video.mp4",
+      error: undefined,
+      costCredits: 55,
+      raw: { consumeCredits: 55 },
+    });
+    if (secondProgress === "review_started") {
+      await secondReviewStarted;
+    } else {
+      expect(secondSettled).toBe(true);
+      await firstReviewStarted;
+    }
+    const reviewCallsBeforeRelease = harness.provider.reviewCalls;
+    releaseReview({ safe: true, reason: "No gore detected" });
+    await Promise.all([first, second]);
+
+    expect(reviewCallsBeforeRelease).toBe(1);
+  });
+
+  it("logs an external task query even when its task-ownership update loses the race", async () => {
+    const harness = await createHarness();
+    const paid = await paidOrder(harness);
+    const job = await harness.store.getJobByOrder(paid.checkout.orderId);
+    const originalGetTask = harness.provider.getTask.bind(harness.provider);
+    harness.provider.getTask = async (taskId) => {
+      await harness.store.updateJob(job!.id, {
+        kieVideoTaskId: "vid_replacement",
+      });
+      return originalGetTask(taskId);
+    };
+
+    const result = await harness.service.reconcileJob(job!.id);
+    const queryLogs = (await harness.store.listProviderLogs()).filter(
+      (log) => log.purpose === "reconcile" && log.taskId === "vid_1"
+    );
+
+    expect(result?.kieVideoTaskId).toBe("vid_replacement");
+    expect(queryLogs).toHaveLength(1);
+    expect(harness.provider.reviewCalls).toBe(0);
+  });
+
+  it("logs an external review when the subsequent task-ownership update loses the race", async () => {
+    const harness = await createHarness();
+    const paid = await paidOrder(harness);
+    const job = await harness.store.getJobByOrder(paid.checkout.orderId);
+    harness.provider.reviewVideo = async () => {
+      await harness.store.updateJobForCurrentTask(
+        job!.id,
+        "vid_1",
+        "pending",
+        { kieVideoTaskId: "vid_replacement" }
+      );
+      return { safe: true, reason: "No gore detected", costCredits: 0.02 };
+    };
+
+    const result = await harness.service.reconcileJob(job!.id);
+    const logs = (await harness.store.listProviderLogs()).filter(
+      (log) => log.purpose === "moderation" && log.taskId === "vid_1"
+    );
+
+    expect(result?.kieVideoTaskId).toBe("vid_replacement");
+    expect(result?.moderationStatus).toBe("pending");
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.costCredits).toBe(0.02);
   });
 
   it("recovers a known provider task when submission logging fails", async () => {

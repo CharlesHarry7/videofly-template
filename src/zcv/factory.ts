@@ -194,6 +194,8 @@ export function createZcvServiceFromEnv() {
     },
     stripe: process.env.STRIPE_API_KEY ? createStripeGateway() : undefined,
     stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+    stripeMode:
+      process.env.ZCV_STRIPE_MODE === "live" ? "live" : "test",
     botSecret:
       process.env.BOT_CHECK_SECRET ||
       process.env.BETTER_AUTH_SECRET ||

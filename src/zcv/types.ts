@@ -78,6 +78,8 @@ export interface JobRecord {
   videoKey: string | null;
   errorMessage: string | null;
   lastReconciledAt: Date | null;
+  reconciliationToken: string | null;
+  reconciliationLeaseUntil: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
