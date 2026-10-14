@@ -66,7 +66,23 @@ async function scanPages(
 
         // 跳过 dashboard、admin 等不需要 SEO 的页面
         const skipRoutes = ['dashboard', 'admin', 'auth', 'login', 'register', 'settings'];
-        if (skipRoutes.some(route => routePath.includes(route))) {
+        const disabledProductRoutes = new Set([
+          'image-to-video',
+          'text-to-video',
+          'reference-to-video',
+          'seedance-1-5',
+          'sora-2',
+          'veo-3-1',
+          'wan-2-6',
+          'credits',
+          'my-creations',
+          'privacy-policy',
+          'terms-of-service',
+        ]);
+        if (
+          skipRoutes.some(route => routePath.includes(route)) ||
+          disabledProductRoutes.has(routePath)
+        ) {
           continue;
         }
 

@@ -13,7 +13,7 @@ export function parseProviderType(
 }
 
 export function getConfiguredAIProvider(): ProviderType | undefined {
-  const raw = process.env.DEFAULT_AI_PROVIDER;
+  const raw = process.env.DEFAULT_AI_PROVIDER || "kie";
   if (!raw) return undefined;
 
   const provider = parseProviderType(raw);

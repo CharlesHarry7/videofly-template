@@ -11,6 +11,7 @@ if (!process.env.SKIP_ENV_VALIDATION) {
 /** @type {import("next").NextConfig} */
 const config = {
   reactStrictMode: true,
+  serverExternalPackages: ["@electric-sql/pglite"],
   pageExtensions: ["ts", "tsx"],
   images: {
     remotePatterns: [
@@ -22,7 +23,7 @@ const config = {
     ],
   },
   /** We already do linting and typechecking as separate tasks in CI */
-  typescript: { ignoreBuildErrors: true },
+  typescript: { ignoreBuildErrors: false },
   output: "standalone",
 };
 

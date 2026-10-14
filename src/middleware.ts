@@ -9,11 +9,26 @@ const intlMiddleware = createMiddleware(routing);
  * Maps old dashboard routes to new routes
  */
 const legacyRedirects: Record<string, string> = {
-  "/dashboard": "/text-to-video",
-  "/dashboard/videos": "/my-creations",
-  "/dashboard/billing": "/credits",
-  "/dashboard/settings": "/settings",
+  "/dashboard": "/",
+  "/dashboard/videos": "/orders",
+  "/dashboard/billing": "/orders",
+  "/dashboard/settings": "/orders",
+  "/settings": "/orders",
+  "/privacy-policy": "/privacy",
+  "/terms-of-service": "/terms",
 };
+
+const disabledProductPaths = [
+  "/image-to-video",
+  "/text-to-video",
+  "/reference-to-video",
+  "/seedance-1-5",
+  "/sora-2",
+  "/veo-3-1",
+  "/wan-2-6",
+  "/credits",
+  "/my-creations",
+];
 
 /**
  * Next-intl middleware with legacy dashboard redirects
@@ -30,6 +45,18 @@ const legacyRedirects: Record<string, string> = {
  */
 export default function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const unlocalizedPath = pathname.replace(/^\/en(?=\/|$)/, "") || "/";
+
+  if (
+    disabledProductPaths.some(
+      (path) =>
+        unlocalizedPath === path || unlocalizedPath.startsWith(`${path}/`)
+    )
+  ) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/";
+    return NextResponse.redirect(url);
+  }
 
   // Check for legacy dashboard routes (without locale prefix)
   for (const [from, to] of Object.entries(legacyRedirects)) {

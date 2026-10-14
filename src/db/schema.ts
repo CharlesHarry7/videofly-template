@@ -4,6 +4,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgEnum,
   pgTable,
   serial,
@@ -373,3 +374,108 @@ export const VideoStatus = {
   FAILED: "FAILED",
 } as const;
 export type VideoStatus = (typeof VideoStatus)[keyof typeof VideoStatus];
+
+export const zcvPreviews = pgTable("zcv_previews", {
+  id: text("id").primaryKey(),
+  claimSecretHash: text("claim_secret_hash").notNull(),
+  ownerUserId: text("owner_user_id"),
+  sourceImageKey: text("source_image_key").notNull(),
+  intermediateImageKey: text("intermediate_image_key"),
+  previewImageKey: text("preview_image_key"),
+  status: text("status").notNull().default("pending"),
+  kieImageTaskId: text("kie_image_task_id"),
+  imageCostCredits: integer("image_cost_credits").default(0).notNull(),
+  errorMessage: text("error_message"),
+  rightsAccepted: boolean("rights_accepted").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const zcvOrders = pgTable(
+  "zcv_orders",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    previewId: text("preview_id").notNull(),
+    productId: text("product_id").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    currency: text("currency").notNull(),
+    status: text("status").notNull().default("created"),
+    paidAt: timestamp("paid_at"),
+    deliveredAt: timestamp("delivered_at"),
+    stripeCheckoutSessionId: text("stripe_checkout_session_id").unique(),
+    stripePaymentIntentId: text("stripe_payment_intent_id"),
+    jobId: text("job_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    previewUserIdx: uniqueIndex("zcv_orders_preview_user_idx").on(
+      table.previewId,
+      table.userId
+    ),
+  })
+);
+
+export const zcvJobs = pgTable("zcv_jobs", {
+  id: text("id").primaryKey(),
+  orderId: text("order_id").notNull().unique(),
+  previewId: text("preview_id").notNull(),
+  userId: text("user_id").notNull(),
+  status: text("status").notNull().default("pending"),
+  phase: text("phase").notNull().default("video"),
+  kieImageTaskId: text("kie_image_task_id"),
+  kieVideoTaskId: text("kie_video_task_id"),
+  imageCostCredits: integer("image_cost_credits").default(0).notNull(),
+  videoCostCredits: integer("video_cost_credits").default(0).notNull(),
+  attemptCount: integer("attempt_count").default(0).notNull(),
+  maxAttempts: integer("max_attempts").default(2).notNull(),
+  videoKey: text("video_key"),
+  errorMessage: text("error_message"),
+  lastReconciledAt: timestamp("last_reconciled_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const zcvStripeEvents = pgTable("zcv_stripe_events", {
+  eventId: text("event_id").primaryKey(),
+  eventType: text("event_type").notNull(),
+  orderId: text("order_id"),
+  processedAt: timestamp("processed_at").defaultNow().notNull(),
+});
+
+export const zcvProviderLogs = pgTable("zcv_provider_logs", {
+  id: serial("id").primaryKey(),
+  taskId: text("task_id"),
+  provider: text("provider").notNull(),
+  model: text("model").notNull(),
+  purpose: text("purpose").notNull(),
+  status: text("status").notNull(),
+  costCredits: numeric("cost_credits", {
+    precision: 12,
+    scale: 4,
+    mode: "number",
+  }),
+  orderId: text("order_id"),
+  previewId: text("preview_id"),
+  jobId: text("job_id"),
+  raw: jsonb("raw"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const zcvRateLimits = pgTable("zcv_rate_limits", {
+  key: text("key").primaryKey(),
+  count: integer("count").default(0).notNull(),
+  windowStart: timestamp("window_start").notNull(),
+});
+
+export const zcvDailyBudget = pgTable("zcv_daily_budget", {
+  day: timestamp("day").primaryKey(),
+  previewCount: integer("preview_count").default(0).notNull(),
+  previewCostCredits: integer("preview_cost_credits").default(0).notNull(),
+});
+
+export const zcvBotNonces = pgTable("zcv_bot_nonces", {
+  nonce: text("nonce").primaryKey(),
+  expiresAt: timestamp("expires_at").notNull(),
+});

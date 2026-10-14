@@ -42,12 +42,8 @@ export const metadata = {
   },
   description: siteConfig.description,
   keywords: [
-    "AI video generator",
-    "text to video",
-    "image to video",
-    "AI video",
-    "video generation",
-    "AI tools",
+    "zombie couple video",
+    "AI Zombie Couple Video Generator",
   ],
   authors: [
     {
@@ -102,7 +98,7 @@ export default async function RootLayout({
                   name: siteConfig.name,
                   url: siteConfig.url,
                   description: siteConfig.description,
-                  inLanguage: ["en", "zh"],
+                  inLanguage: ["en"],
                 },
                 {
                   "@type": "Organization",

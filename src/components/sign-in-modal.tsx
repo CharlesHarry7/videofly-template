@@ -26,7 +26,12 @@ export const SignInModalContent = ({ lang }: SignInModalContentProps) => {
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
 
-  const callbackURL = searchParams?.get("from") ?? `/${lang}${siteConfig.routes.defaultLoginRedirect}`;
+  const buyPreviewId = searchParams?.get("previewId");
+  const callbackURL =
+    searchParams?.get("from") ??
+    (searchParams?.get("buy") === "1" && buyPreviewId
+      ? `/${lang}?buy=1&previewId=${encodeURIComponent(buyPreviewId)}`
+      : `/${lang}${siteConfig.routes.defaultLoginRedirect}`);
 
   const handleSocialLogin = async (provider: "google") => {
     setSignInClicked(provider);

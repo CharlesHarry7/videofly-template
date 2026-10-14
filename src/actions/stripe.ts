@@ -3,13 +3,14 @@
 import { z } from "zod";
 
 import { userActionClient } from "@/lib/safe-action";
-import { createStripeSession, getMySubscription, getUserPlans } from "@/services/billing";
+import { getMySubscription, getUserPlans } from "@/services/billing";
+import { assertZcvCheckoutMode } from "@/zcv/stripe-mode";
 
 export const createStripeSessionAction = userActionClient
   .schema(z.object({ planId: z.string().min(1) }))
-  .action(async ({ parsedInput, ctx }) => {
-    const result = await createStripeSession(ctx.user.id, parsedInput.planId);
-    return { success: result.success, url: result.url };
+  .action(async () => {
+    assertZcvCheckoutMode("subscription");
+    return { success: false as const, url: null };
   });
 
 export const getUserPlansAction = userActionClient
