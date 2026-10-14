@@ -254,6 +254,29 @@ function kieParamsTransformer(
     baseInput.generate_audio = params.generateAudio ?? false;
   }
 
+  if (internalModelId === "nano-banana-2") {
+    return {
+      input: {
+        prompt: params.prompt,
+        image_input: imageUrls || [],
+        aspect_ratio: params.aspectRatio || "auto",
+        resolution: params.quality || "1K",
+        output_format: "png",
+      },
+    };
+  }
+
+  if (internalModelId === "kling-2.6-i2v") {
+    return {
+      input: {
+        prompt: params.prompt,
+        image_urls: imageUrls || [],
+        sound: params.generateAudio ?? false,
+        duration: String(params.duration || 5),
+      },
+    };
+  }
+
   return {
     input: baseInput,
   };
@@ -479,6 +502,30 @@ export const MODEL_MAPPINGS: Record<string, ModelMapping> = {
       },
     },
   },
+
+  "nano-banana-2": {
+    internalId: "nano-banana-2",
+    displayName: "Nano Banana 2",
+    providers: {
+      kie: {
+        providerModelId: "nano-banana-2",
+        supported: true,
+        transformParams: kieParamsTransformer,
+      },
+    },
+  },
+
+  "kling-2.6-i2v": {
+    internalId: "kling-2.6-i2v",
+    displayName: "Kling 2.6 Image to Video",
+    providers: {
+      kie: {
+        providerModelId: "kling-2.6/image-to-video",
+        supported: true,
+        transformParams: kieParamsTransformer,
+      },
+    },
+  },
 };
 
 const MODEL_MODE_SUPPORT: Record<
@@ -512,6 +559,12 @@ const MODEL_MODE_SUPPORT: Record<
   },
   "seedance-1.0-pro-quality": {
     apimart: ["text-to-video", "image-to-video"],
+  },
+  "nano-banana-2": {
+    kie: ["image-to-video"],
+  },
+  "kling-2.6-i2v": {
+    kie: ["image-to-video"],
   },
 };
 
