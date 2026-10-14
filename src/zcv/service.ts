@@ -635,13 +635,16 @@ export class ZcvService {
       ]);
       await this.recordVideoSubmission(job, task);
     } catch (error) {
-      await this.store.updateJob(job.id, {
-        status: "submission_unknown",
-        errorMessage:
-          error instanceof Error
-            ? error.message
-            : "Provider submission status unknown",
-      });
+      const current = await this.store.getJob(job.id);
+      if (!current?.kieVideoTaskId) {
+        await this.store.updateJob(job.id, {
+          status: "submission_unknown",
+          errorMessage:
+            error instanceof Error
+              ? error.message
+              : "Provider submission status unknown",
+        });
+      }
       // A late provider response safely recovers its task ID without another charge.
       void submission
         .then((task) => this.recordVideoSubmission(job, task))
@@ -696,19 +699,27 @@ export class ZcvService {
     if (!job.kieVideoTaskId) {
       return job.status === "pending" ? this.startOrRecoverJob(job.id) : job;
     }
+    const taskId = job.kieVideoTaskId;
 
     const reconciliationStartedAt = this.now();
     const claimed = await this.store.claimJobReconciliation(
       job.id,
+      taskId,
       new Date(reconciliationStartedAt),
       new Date(reconciliationStartedAt - ZCV_LIMITS.reconcileCooldownMs)
     );
     if (!claimed) return this.store.getJob(job.id);
 
-    const remote = await this.provider.getTask(job.kieVideoTaskId);
-    await this.store.updateJob(job.id, { lastReconciledAt: new Date(this.now()) });
+    const remote = await this.provider.getTask(taskId);
+    const stillCurrent = await this.store.updateJobForCurrentTask(
+      job.id,
+      taskId,
+      job.moderationStatus,
+      { lastReconciledAt: new Date(this.now()) }
+    );
+    if (!stillCurrent) return this.store.getJob(job.id);
     await this.store.insertProviderLog({
-      taskId: job.kieVideoTaskId,
+      taskId,
       provider: "kie",
       model: ZCV_MODELS.video.providerModelId,
       purpose: "reconcile",
@@ -737,13 +748,19 @@ export class ZcvService {
         } catch (error) {
           const message =
             error instanceof Error ? error.message : "Video review result unknown";
-          await this.store.updateJob(job.id, {
-            status: "needs_check",
-            moderationStatus: "unknown",
-            errorMessage: "Safety review could not be confirmed",
-          });
+          const transitioned = await this.store.updateJobForCurrentTask(
+            job.id,
+            taskId,
+            job.moderationStatus,
+            {
+              status: "needs_check",
+              moderationStatus: "unknown",
+              errorMessage: "Safety review could not be confirmed",
+            }
+          );
+          if (!transitioned) return this.store.getJob(job.id);
           await this.store.insertProviderLog({
-            taskId: job.kieVideoTaskId,
+            taskId,
             provider: "kie",
             model: ZCV_MODELS.moderation.providerModelId,
             purpose: "moderation",
@@ -760,7 +777,7 @@ export class ZcvService {
         }
 
         await this.store.insertProviderLog({
-          taskId: job.kieVideoTaskId,
+          taskId,
           provider: "kie",
           model: ZCV_MODELS.moderation.providerModelId,
           purpose: "moderation",
@@ -774,51 +791,84 @@ export class ZcvService {
 
         if (!review.safe) {
           if (job.attemptCount < job.maxAttempts) {
-            await this.store.updateJob(job.id, {
-              status: "pending",
-              moderationStatus: "rejected",
-              kieVideoTaskId: null,
-              errorMessage: "Video did not pass the safety review",
-            });
+            const transitioned = await this.store.updateJobForCurrentTask(
+              job.id,
+              taskId,
+              job.moderationStatus,
+              {
+                status: "pending",
+                moderationStatus: "rejected",
+                kieVideoTaskId: null,
+                errorMessage: "Video did not pass the safety review",
+              }
+            );
+            if (!transitioned) return this.store.getJob(job.id);
             return this.startOrRecoverJob(job.id);
           }
-          await this.store.updateJob(job.id, {
-            status: "refund_pending",
-            moderationStatus: "rejected",
-            errorMessage: "Video did not pass the safety review; refund required",
-          });
+          const transitioned = await this.store.updateJobForCurrentTask(
+            job.id,
+            taskId,
+            job.moderationStatus,
+            {
+              status: "refund_pending",
+              moderationStatus: "rejected",
+              errorMessage:
+                "Video did not pass the safety review; refund required",
+            }
+          );
+          if (!transitioned) return this.store.getJob(job.id);
           await this.store.updateOrder(job.orderId, { status: "refund_pending" });
           return this.store.getJob(job.id);
         }
-        await this.store.updateJob(job.id, { moderationStatus: "approved" });
+        const approved = await this.store.updateJobForCurrentTask(
+          job.id,
+          taskId,
+          job.moderationStatus,
+          { moderationStatus: "approved" }
+        );
+        if (!approved) return this.store.getJob(job.id);
       }
 
       const video = await this.fetchBinary(remote.resultUrl);
       const videoKey = `zcv/${job.previewId}/video.mp4`;
       await this.storage.put(videoKey, video, "video/mp4");
-      await this.store.completeDelivery(
+      const delivered = await this.store.completeDelivery(
         job.id,
         job.orderId,
+        taskId,
         videoKey,
         new Date(this.now())
       );
+      if (!delivered) return this.store.getJob(job.id);
       return this.store.getJob(job.id);
     }
 
     if (remote.status === "failed") {
       if (job.attemptCount < job.maxAttempts) {
-        await this.store.updateJob(job.id, {
-          kieVideoTaskId: null,
-          status: "pending",
-          moderationStatus: "pending",
-          errorMessage: remote.error || "Video generation failed",
-        });
+        const transitioned = await this.store.updateJobForCurrentTask(
+          job.id,
+          taskId,
+          job.moderationStatus,
+          {
+            kieVideoTaskId: null,
+            status: "pending",
+            moderationStatus: "pending",
+            errorMessage: remote.error || "Video generation failed",
+          }
+        );
+        if (!transitioned) return this.store.getJob(job.id);
         return this.startOrRecoverJob(job.id);
       }
-      await this.store.updateJob(job.id, {
-        status: "refund_pending",
-        errorMessage: remote.error || "Video generation failed",
-      });
+      const transitioned = await this.store.updateJobForCurrentTask(
+        job.id,
+        taskId,
+        job.moderationStatus,
+        {
+          status: "refund_pending",
+          errorMessage: remote.error || "Video generation failed",
+        }
+      );
+      if (!transitioned) return this.store.getJob(job.id);
       await this.store.updateOrder(job.orderId, { status: "refund_pending" });
     }
 
@@ -834,10 +884,22 @@ export class ZcvService {
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Unknown reconciliation error";
-        await this.store.updateJob(job.id, {
-          errorMessage: message,
-          lastReconciledAt: new Date(this.now()),
-        });
+        if (job.kieVideoTaskId) {
+          await this.store.updateJobForCurrentTask(
+            job.id,
+            job.kieVideoTaskId,
+            job.moderationStatus,
+            {
+              errorMessage: message,
+              lastReconciledAt: new Date(this.now()),
+            }
+          );
+        } else {
+          await this.store.updateJob(job.id, {
+            errorMessage: message,
+            lastReconciledAt: new Date(this.now()),
+          });
+        }
         await this.store.insertProviderLog({
           taskId: job.kieVideoTaskId ?? undefined,
           provider: "kie",

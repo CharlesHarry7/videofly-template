@@ -434,6 +434,125 @@ describe("Zombie Couple Video product", () => {
     expect(moderationLogs[0]?.costCredits).toBeNull();
   });
 
+  it("keeps an in-flight review from being reconciled again after the old 15s cooldown", async () => {
+    const harness = await createHarness();
+    harness.provider.autoCompleteVideo = false;
+    const paid = await paidOrder(harness);
+    const job = await harness.store.getJobByOrder(paid.checkout.orderId);
+    const task = harness.provider.tasks.get("vid_1");
+    task!.status = "completed";
+    task!.resultUrl = "https://example.test/video.mp4";
+
+    let signalReviewStarted!: () => void;
+    const reviewStarted = new Promise<void>((resolve) => {
+      signalReviewStarted = resolve;
+    });
+    let releaseReview!: (result: { safe: boolean; reason: string }) => void;
+    const blockedReview = new Promise<{ safe: boolean; reason: string }>(
+      (resolve) => {
+        releaseReview = resolve;
+      }
+    );
+    harness.provider.reviewVideo = async () => {
+      harness.provider.reviewCalls += 1;
+      if (harness.provider.reviewCalls === 1) {
+        signalReviewStarted();
+        return blockedReview;
+      }
+      return { safe: false, reason: "visible blood" };
+    };
+
+    const firstReconciliation = harness.service.reconcileJob(job!.id);
+    await reviewStarted;
+    harness.advanceTime(15_001);
+    await harness.service.reconcileJob(job!.id);
+
+    expect(harness.provider.reviewCalls).toBe(1);
+    releaseReview({ safe: false, reason: "visible blood" });
+    await firstReconciliation;
+
+    const retried = await harness.store.getJob(job!.id);
+    expect(harness.provider.videoCalls).toBe(2);
+    expect(retried?.attemptCount).toBe(2);
+    expect(retried?.kieVideoTaskId).toBe("vid_2");
+    expect(retried?.status).toBe("video_submitted");
+  });
+
+  it("does not let a late old-task review clear a newer task after the cooldown expires", async () => {
+    const harness = await createHarness();
+    harness.provider.autoCompleteVideo = false;
+    const paid = await paidOrder(harness);
+    const job = await harness.store.getJobByOrder(paid.checkout.orderId);
+    const task = harness.provider.tasks.get("vid_1");
+    task!.status = "completed";
+    task!.resultUrl = "https://example.test/video.mp4";
+
+    let signalReviewStarted!: () => void;
+    const reviewStarted = new Promise<void>((resolve) => {
+      signalReviewStarted = resolve;
+    });
+    let releaseFirstReview!: (result: { safe: boolean; reason: string }) => void;
+    const firstReview = new Promise<{ safe: boolean; reason: string }>(
+      (resolve) => {
+        releaseFirstReview = resolve;
+      }
+    );
+    harness.provider.reviewVideo = async () => {
+      harness.provider.reviewCalls += 1;
+      if (harness.provider.reviewCalls === 1) {
+        signalReviewStarted();
+        return firstReview;
+      }
+      return { safe: false, reason: "visible blood" };
+    };
+
+    const firstReconciliation = harness.service.reconcileJob(job!.id);
+    await reviewStarted;
+    harness.advanceTime(ZCV_LIMITS.reconcileCooldownMs + 1);
+    await harness.service.reconcileJob(job!.id);
+
+    const newerTask = await harness.store.getJob(job!.id);
+    expect(newerTask?.kieVideoTaskId).toBe("vid_2");
+    releaseFirstReview({ safe: false, reason: "visible blood" });
+    await firstReconciliation;
+
+    const finalJob = await harness.store.getJob(job!.id);
+    expect(harness.provider.videoCalls).toBe(2);
+    expect(finalJob?.attemptCount).toBe(2);
+    expect(finalJob?.kieVideoTaskId).toBe("vid_2");
+    expect(finalJob?.status).toBe("video_submitted");
+  });
+
+  it("recovers a known provider task when submission logging fails", async () => {
+    const harness = await createHarness();
+    const insertProviderLog = harness.store.insertProviderLog.bind(harness.store);
+    let failPaidVideoLog = true;
+    harness.store.insertProviderLog = async (log) => {
+      if (failPaidVideoLog && log.purpose === "paid_video") {
+        failPaidVideoLog = false;
+        throw new Error("provider log insert failed");
+      }
+      return insertProviderLog(log);
+    };
+
+    const paid = await paidOrder(harness);
+    const job = await harness.store.getJobByOrder(paid.checkout.orderId);
+    expect(job?.kieVideoTaskId).toBe("vid_1");
+    expect(job?.status).toBe("video_submitted");
+
+    harness.store.insertProviderLog = insertProviderLog;
+    const queryCallsBeforeRecovery = harness.provider.queryCalls;
+    await harness.store.updateJob(job!.id, { status: "submission_unknown" });
+    await harness.service.reconcileJob(job!.id);
+
+    const recovered = await harness.store.getJob(job!.id);
+    const order = await harness.store.getOrder(paid.checkout.orderId);
+    expect(harness.provider.queryCalls).toBe(queryCallsBeforeRecovery + 1);
+    expect(recovered?.status).toBe("completed");
+    expect(recovered?.kieVideoTaskId).toBe("vid_1");
+    expect(order?.deliveredAt).toBeTruthy();
+  });
+
   it("keeps a paid job recoverable when delivery persistence fails", async () => {
     const harness = await createHarness();
     harness.provider.autoCompleteVideo = false;

@@ -382,16 +382,18 @@ export class ZcvStore {
 
   async claimJobReconciliation(
     id: string,
+    taskId: string,
     now: Date,
     cooldownBefore: Date
   ): Promise<boolean> {
     const rows = await this.sql.query(
       `UPDATE zcv_jobs
-       SET last_reconciled_at=$2, updated_at=NOW()
-       WHERE id=$1 AND status='video_submitted'
-         AND (last_reconciled_at IS NULL OR last_reconciled_at <= $3)
+       SET status='video_submitted', last_reconciled_at=$3, updated_at=NOW()
+       WHERE id=$1 AND kie_video_task_id=$2
+         AND status IN ('video_submitted','submission_unknown')
+         AND (last_reconciled_at IS NULL OR last_reconciled_at <= $4)
        RETURNING id`,
-      [id, now, cooldownBefore]
+      [id, taskId, now, cooldownBefore]
     );
     return rows.length > 0;
   }
@@ -486,24 +488,74 @@ export class ZcvStore {
     );
   }
 
+  async updateJobForCurrentTask(
+    id: string,
+    taskId: string,
+    expectedModerationStatus: JobRecord["moderationStatus"],
+    patch: Partial<
+      Pick<
+        JobRecord,
+        | "status"
+        | "moderationStatus"
+        | "phase"
+        | "kieVideoTaskId"
+        | "videoCostCredits"
+        | "attemptCount"
+        | "videoKey"
+        | "errorMessage"
+        | "lastReconciledAt"
+      >
+    >
+  ): Promise<boolean> {
+    const columnByField = {
+      status: "status",
+      moderationStatus: "moderation_status",
+      phase: "phase",
+      kieVideoTaskId: "kie_video_task_id",
+      videoCostCredits: "video_cost_credits",
+      attemptCount: "attempt_count",
+      videoKey: "video_key",
+      errorMessage: "error_message",
+      lastReconciledAt: "last_reconciled_at",
+    } as const;
+    const entries = Object.entries(patch).filter(
+      ([field]) => field in columnByField
+    ) as Array<[keyof typeof columnByField, unknown]>;
+    if (entries.length === 0) return false;
+    const assignments = entries.map(
+      ([field], index) => `${columnByField[field]}=$${index + 4}`
+    );
+    const rows = await this.sql.query(
+      `UPDATE zcv_jobs
+       SET ${assignments.join(", ")}, updated_at=NOW()
+       WHERE id=$1 AND kie_video_task_id=$2 AND status='video_submitted'
+         AND moderation_status=$3
+       RETURNING id`,
+      [id, taskId, expectedModerationStatus, ...entries.map(([, value]) => value)]
+    );
+    return rows.length > 0;
+  }
+
   async completeDelivery(
     jobId: string,
     orderId: string,
+    expectedTaskId: string,
     videoKey: string,
     deliveredAt: Date
-  ): Promise<void> {
-    await this.transaction(async (store) => {
-      const job = await store.getJob(jobId);
-      if (!job || job.moderationStatus !== "approved") {
-        throw new Error("Video must pass moderation before delivery");
-      }
-      await store.updateJob(jobId, {
-        status: "completed",
-        phase: "done",
-        videoKey,
-        errorMessage: null,
-      });
+  ): Promise<boolean> {
+    return this.transaction(async (store) => {
+      const rows = await store.sql.query(
+        `UPDATE zcv_jobs
+         SET status='completed', phase='done', video_key=$3,
+             error_message=NULL, updated_at=NOW()
+         WHERE id=$1 AND kie_video_task_id=$2 AND status='video_submitted'
+           AND moderation_status='approved'
+         RETURNING id`,
+        [jobId, expectedTaskId, videoKey]
+      );
+      if (rows.length === 0) return false;
       await store.updateOrder(orderId, { deliveredAt });
+      return true;
     });
   }
 

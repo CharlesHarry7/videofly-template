@@ -50,7 +50,7 @@ export const ZCV_LIMITS = {
   providerFetchTokenTtlMs: 30 * 60 * 1000,
   videoAttempts: 2,
   providerTimeoutMs: 30 * 1000,
-  reconcileCooldownMs: 15 * 1000,
+  reconcileCooldownMs: 45 * 1000,
 };
 
 export const ZCV_PROMPTS = {
