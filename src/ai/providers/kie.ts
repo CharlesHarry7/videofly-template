@@ -11,7 +11,7 @@ import {
 
 export class KieProvider implements AIVideoProvider {
   name = "kie";
-  supportImageToVideo = false; // kie only supports text-to-video
+  supportImageToVideo = true;
   private apiKey: string;
   private baseUrl = "https://api.kie.ai";
 

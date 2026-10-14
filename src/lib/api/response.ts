@@ -1,3 +1,5 @@
+import { ZcvError } from "@/zcv/types";
+
 import { ApiError } from "./error";
 
 /**
@@ -24,6 +26,9 @@ export function apiError(message: string, status = 400, details?: unknown) {
  * Handle errors and return appropriate response
  */
 export function handleApiError(error: unknown) {
+  if (error instanceof ZcvError) {
+    return apiError(error.message, error.status, { code: error.code });
+  }
   if (error instanceof ApiError) {
     return apiError(error.message, error.status, error.details);
   }
