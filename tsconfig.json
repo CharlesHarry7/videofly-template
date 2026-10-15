@@ -53,6 +53,8 @@
     "tooling",
     "turbo",
     "docs",
-    "drizzle.config.ts"
+    "drizzle.config.ts",
+    "vitest.config.ts",
+    "open-next.config.ts"
   ]
 }

@@ -1,12 +1,3 @@
-import { CreditsPage } from "@/components/credits/credits-page";
+import { TemplateRemovedPage } from "@/components/template-removed-page";
 
-interface PageProps {
-  params: Promise<{
-    locale: string;
-  }>;
-}
-
-export default async function CreditsRoute({ params }: PageProps) {
-  const { locale } = await params;
-  return <CreditsPage locale={locale} />;
-}
+export default TemplateRemovedPage;

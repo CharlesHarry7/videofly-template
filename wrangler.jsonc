@@ -1,0 +1,54 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "zombiecouplevideo",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-10-15",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "keep_vars": true,
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    { "pattern": "zombiecouplevideo.com/*", "zone_name": "zombiecouplevideo.com" },
+    { "pattern": "www.zombiecouplevideo.com/*", "zone_name": "zombiecouplevideo.com" }
+  ],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true,
+    "traces": {
+      "enabled": true
+    }
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "zombiecouplevideo"
+    }
+  ],
+  "vars": {
+    "CLOUDFLARE_ENV": "production",
+    "ZCV_NOINDEX": "false",
+    "NEXT_PUBLIC_APP_URL": "https://zombiecouplevideo.com",
+    "NEXT_PUBLIC_BILLING_PROVIDER": "stripe"
+  },
+  "env": {
+    "sandbox": {
+      "name": "zombiecouplevideo-sandbox",
+      "workers_dev": true,
+      "preview_urls": false,
+      "services": [
+        {
+          "binding": "WORKER_SELF_REFERENCE",
+          "service": "zombiecouplevideo-sandbox"
+        }
+      ],
+      "vars": {
+        "CLOUDFLARE_ENV": "sandbox",
+        "ZCV_NOINDEX": "true",
+        "NEXT_PUBLIC_BILLING_PROVIDER": "stripe"
+      }
+    }
+  }
+}

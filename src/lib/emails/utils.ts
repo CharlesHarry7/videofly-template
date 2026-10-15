@@ -163,7 +163,7 @@ export async function sendWelcomeEmail(props: {
  * await sendResetPasswordEmail({
  *   to: "user@example.com",
  *   name: "John",
- *   resetUrl: "https://videofly.app/reset-password?token=xxx",
+ *   resetUrl: "https://zombiecouplevideo.com/reset-password?token=xxx",
  *   locale: "en",
  * });
  * ```

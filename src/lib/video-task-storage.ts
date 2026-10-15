@@ -11,7 +11,7 @@ export interface VideoTask {
 }
 
 class VideoTaskStorage {
-  private readonly STORAGE_KEY = "videofly_video_tasks";
+  private readonly STORAGE_KEY = "zombiecouplevideo_video_tasks";
   private readonly EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 
   private getStorageKey(userId?: string) {

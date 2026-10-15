@@ -1,12 +1,3 @@
-import { MyCreationsPage } from "@/components/creation/my-creations-page";
+import { TemplateRemovedPage } from "@/components/template-removed-page";
 
-interface PageProps {
-  params: Promise<{
-    locale: string;
-  }>;
-}
-
-export default async function MyCreationsRoute({ params }: PageProps) {
-  const { locale } = await params;
-  return <MyCreationsPage locale={locale} />;
-}
+export default TemplateRemovedPage;

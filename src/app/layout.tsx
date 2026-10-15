@@ -4,8 +4,6 @@ import { getLocale, getMessages } from "next-intl/server";
 
 import "@/styles/globals.css";
 
-import { Analytics } from "@vercel/analytics/react";
-import { SpeedInsights } from "@vercel/speed-insights/next";
 import { NextIntlClientProvider } from "next-intl";
 
 import { cn } from "@/components/ui";
@@ -16,20 +14,18 @@ import { TailwindIndicator } from "@/components/tailwind-indicator";
 import { ThemeProvider } from "@/components/theme-provider";
 import { PlausibleAnalytics } from "@/components/plausible-provider";
 import { i18n } from "@/config/i18n-config";
-import { siteConfig } from "@/config/site";
+import { siteConfig, siteKeywords } from "@/config/site";
+import { getPublicAppUrl } from "@/lib/site";
 
 const fontSans = FontSans({
   subsets: ["latin"],
   variable: "--font-sans",
 });
 
-// Font files can be colocated inside of `pages`
 const fontHeading = localFont({
   src: "../styles/fonts/CalSans-SemiBold.woff2",
   variable: "--font-heading",
 });
-
-
 
 export function generateStaticParams() {
   return i18n.locales.map((locale) => ({ locale }));
@@ -41,14 +37,7 @@ export const metadata = {
     template: `%s | ${siteConfig.name}`,
   },
   description: siteConfig.description,
-  keywords: [
-    "AI video generator",
-    "text to video",
-    "image to video",
-    "AI video",
-    "video generation",
-    "AI tools",
-  ],
+  keywords: siteKeywords,
   authors: [
     {
       name: siteConfig.name,
@@ -62,11 +51,13 @@ export const metadata = {
     title: siteConfig.name,
     description: siteConfig.description,
     siteName: siteConfig.name,
+    images: [{ url: siteConfig.ogImage, width: 1200, height: 630, alt: siteConfig.name }],
   },
   twitter: {
     card: "summary_large_image",
     title: siteConfig.name,
     description: siteConfig.description,
+    images: [siteConfig.ogImage],
   },
   icons: {
     icon: [
@@ -75,7 +66,7 @@ export const metadata = {
     ],
     apple: "/apple-touch-icon.png",
   },
-  metadataBase: new URL(siteConfig.url),
+  metadataBase: new URL(getPublicAppUrl()),
 };
 
 interface RootLayoutProps {
@@ -102,7 +93,7 @@ export default async function RootLayout({
                   name: siteConfig.name,
                   url: siteConfig.url,
                   description: siteConfig.description,
-                  inLanguage: ["en", "zh"],
+                  inLanguage: ["en"],
                 },
                 {
                   "@type": "Organization",
@@ -132,8 +123,6 @@ export default async function RootLayout({
             <QueryProvider>
               <PlausibleAnalytics />
               {children}
-              <Analytics />
-              <SpeedInsights />
               <Toaster richColors position="top-right" />
               <TailwindIndicator />
             </QueryProvider>

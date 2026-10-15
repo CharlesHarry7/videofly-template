@@ -67,7 +67,7 @@ export function HeaderSimple({
             <Menu className="h-5 w-5" />
           </button>
           <Link href={`/${lang}`} className="flex items-center gap-2">
-            <span className="text-xl font-semibold">VideoFly</span>
+            <span className="text-xl font-semibold">ZombieCoupleVideo</span>
           </Link>
         </div>
 

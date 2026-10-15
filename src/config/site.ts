@@ -2,6 +2,12 @@
  * Site configuration
  * Central place for website settings, auth providers, and features
  */
+import {
+  BRAND_NAME,
+  getPublicAppUrl,
+  KEYWORD,
+} from "@/lib/site";
+
 export interface SiteConfig {
   name: string;
   description: string;
@@ -23,22 +29,31 @@ export interface SiteConfig {
 }
 
 export const siteConfig: SiteConfig = {
-  name: "VideoFly",
-  description: "AI Video Generation Platform - Create stunning videos with Sora 2, Veo 3.1, and more",
-  url: process.env.NEXT_PUBLIC_APP_URL || "https://videofly.app",
+  name: BRAND_NAME,
+  description:
+    "Turn a couple photo into a zombie couple video. Free watermarked preview, then buy credits starting at $6.99.",
+  url: getPublicAppUrl(),
   ogImage: "/og.png",
   links: {},
   auth: {
-    enableGoogleLogin: true,
+    enableGoogleLogin: false,
     enableMagicLinkLogin: true,
-    defaultProvider: "google",
+    defaultProvider: "email",
   },
   routes: {
-    defaultLoginRedirect: "/text-to-video",
+    defaultLoginRedirect: "/",
   },
 };
 
-// Helper to get enabled auth providers
+export const siteKeywords = [
+  KEYWORD,
+  "zombie couple video generator",
+  "AI zombie couple video",
+  "couple photo to zombie video",
+  "cartoon zombie couple",
+  BRAND_NAME,
+];
+
 export function getEnabledAuthProviders() {
   const providers: string[] = [];
   if (siteConfig.auth.enableGoogleLogin) providers.push("google");

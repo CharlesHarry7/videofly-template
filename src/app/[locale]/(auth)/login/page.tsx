@@ -42,11 +42,11 @@ export default async function LoginPage({
       <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px]">
         <div className="flex flex-col space-y-2 text-center">
           <Image
-            src="/images/avatars/saasfly-logo.svg"
+            src="/logo.svg"
             className="mx-auto"
             width="64"
             height="64"
-            alt="VideoFly Logo - AI Video Generation Platform"
+            alt="ZombieCoupleVideo"
           />
           <h1 className="text-2xl font-semibold tracking-tight">
             {t("welcome_back")}

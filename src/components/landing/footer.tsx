@@ -52,7 +52,7 @@ export function LandingFooter() {
               href="/"
               className="flex items-center gap-2 text-xl font-semibold mb-4"
             >
-              🎬 VideoFly
+              ZombieCoupleVideo
             </LocaleLink>
             <p className="text-sm text-muted-foreground mb-4">
               Transform your ideas into stunning videos with AI.
@@ -89,7 +89,7 @@ export function LandingFooter() {
           <p className="text-sm text-muted-foreground flex items-center gap-1">
             Made with
             <Heart className="h-4 w-4 fill-pink-500 text-pink-500" />
-            by VideoFly Team
+            by ZombieCoupleVideo
           </p>
         </div>
       </div>
