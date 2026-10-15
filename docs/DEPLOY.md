@@ -50,11 +50,9 @@ Optional Stripe Price objects, if you create them in Stripe instead of using
 server `price_data`:
 
 - `STRIPE_PRICE_ID_SINGLE`
-- `STRIPE_PRICE_ID_PLUS`
-- `STRIPE_PRICE_ID_BUNDLE`
 
 Amounts are still enforced server-side against the pack table (`$9.99` Single /
-10 credits, `$16.99` Plus / 30, `$29.99` Bundle / 60).
+10 credits). Plus and Bundle packs are not sold.
 
 ## Cloudflare steps (human)
 
@@ -89,9 +87,9 @@ Amounts are still enforced server-side against the pack table (`$9.99` Single /
    `checkout.session.async_payment_failed`, `payment_intent.payment_failed`.
 4. Copy the webhook signing secret into `STRIPE_WEBHOOK_SECRET`.
 5. Copy the secret key into `STRIPE_API_KEY` (`sk_test_...` first).
-6. Optional: create one-time Prices for Single `$9.99`, Plus `$16.99`, Bundle
-   `$29.99` and set the `STRIPE_PRICE_ID_*` secrets. If unset, Checkout uses
-   `price_data` from the server pack table.
+6. Optional: create a one-time Price for Single `$9.99` and set
+   `STRIPE_PRICE_ID_SINGLE`. If unset, Checkout uses `price_data` from the
+   server pack table. Do not create Plus or Bundle prices.
 7. Success URL is `/success?orderId=...`. That page never grants the video;
    the webhook does.
 

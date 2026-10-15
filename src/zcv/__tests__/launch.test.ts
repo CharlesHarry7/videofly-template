@@ -23,12 +23,8 @@ describe("ZombieCoupleVideo launch surface", () => {
 
   it("reads optional Stripe price ids from env names only", () => {
     expect(stripePriceIdEnvName("single")).toBe("STRIPE_PRICE_ID_SINGLE");
-    expect(stripePriceIdEnvName("plus")).toBe("STRIPE_PRICE_ID_PLUS");
-    expect(stripePriceIdEnvName("bundle")).toBe("STRIPE_PRICE_ID_BUNDLE");
     expect(ZCV_CREDIT_PACKS.map((pack) => pack.slug)).toEqual([
       "single",
-      "plus",
-      "bundle",
     ]);
   });
 

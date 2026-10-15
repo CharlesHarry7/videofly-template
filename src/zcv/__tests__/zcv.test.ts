@@ -124,34 +124,6 @@ describe("Zombie Couple Video product", () => {
     expect(checkout.credits).toBe(10);
   });
 
-  it("looks up Plus from packId and still validates the webhook against the order", async () => {
-    const harness = await createHarness();
-    const preview = await readyPreview(harness, "user_a");
-    const checkout = await harness.service.createCheckout({
-      userId: "user_a",
-      previewId: preview.previewId,
-      claimSecret: preview.claimSecret,
-      packId: "plus",
-    });
-    const order = await harness.store.getOrder(checkout.orderId);
-    expect(order?.amountCents).toBe(1699);
-    expect(order?.productId).toBe("zcv-plus");
-    expect(checkout.credits).toBe(30);
-
-    const event = paidCheckoutEvent({
-      eventId: `evt_${checkout.orderId}`,
-      orderId: checkout.orderId,
-      userId: "user_a",
-      amountCents: 1699,
-      productId: "zcv-plus",
-    });
-    const signed = signedWebhook(harness.stripe, event);
-    const result = await harness.service.handleStripeWebhook(
-      signed.payload,
-      signed.signature
-    );
-    expect(result.granted).toBe(true);
-  });
 
   it("rejects an unknown credit pack before talking to Stripe", async () => {
     const harness = await createHarness();

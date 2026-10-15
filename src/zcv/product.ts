@@ -2,7 +2,7 @@ export const ZCV_CREDITS_PER_VIDEO = 10;
 export const ZCV_DURATION_SECONDS = 5;
 export const ZCV_CURRENCY = "usd";
 
-export type ZcvCreditPackSlug = "single" | "plus" | "bundle";
+export type ZcvCreditPackSlug = "single";
 
 export interface ZcvCreditPack {
   id: string;
@@ -22,23 +22,6 @@ export const ZCV_CREDIT_PACKS: readonly ZcvCreditPack[] = [
     priceCents: 999,
     credits: 10,
     videos: 1,
-  },
-  {
-    id: "zcv-plus",
-    slug: "plus",
-    name: "Plus",
-    priceCents: 1699,
-    credits: 30,
-    videos: 3,
-    popular: true,
-  },
-  {
-    id: "zcv-bundle",
-    slug: "bundle",
-    name: "Bundle",
-    priceCents: 2999,
-    credits: 60,
-    videos: 6,
   },
 ];
 
@@ -99,6 +82,6 @@ export function publicCreditCatalog() {
     })),
     oneTime: true,
     subscription: false,
-    copy: "Free preview is an image; the video is generated after payment. Credit packs start at $9.99 for 10 credits.",
+    copy: "Free preview is an image; the video is generated after payment. One credit pack: $9.99 for 10 credits.",
   };
 }
