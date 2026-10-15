@@ -10,7 +10,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth/client";
 import { useSigninModal } from "@/hooks/use-signin-modal";
-import { ZCV_DURATION_SECONDS, ZCV_PRICE_LABEL } from "@/zcv/product";
+import {
+  formatUsd,
+  ZCV_CREDIT_PACKS,
+  ZCV_DEFAULT_PACK,
+} from "@/zcv/product";
 
 type PreviewState = {
   previewId: string;
@@ -28,9 +32,14 @@ export function ZcvTool() {
   const { data: session } = authClient.useSession();
   const [file, setFile] = useState<File | null>(null);
   const [rightsAccepted, setRightsAccepted] = useState(false);
+  const [packId, setPackId] = useState(
+    () => searchParams.get("packId") || ZCV_DEFAULT_PACK.id
+  );
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [busy, setBusy] = useState(false);
   const checkoutStartedFor = useRef<string | null>(null);
+  const selectedPack =
+    ZCV_CREDIT_PACKS.find((pack) => pack.id === packId) ?? ZCV_DEFAULT_PACK;
 
   useEffect(() => {
     let saved: PreviewState | null = null;
@@ -43,6 +52,8 @@ export function ZcvTool() {
     } catch {
       // ignore
     }
+    const packFromQuery = searchParams.get("packId");
+    if (packFromQuery) setPackId(packFromQuery);
     const previewId = searchParams.get("previewId") || saved?.previewId;
     if (!previewId) return;
     void fetch(`/api/zcv/preview/${encodeURIComponent(previewId)}`)
@@ -100,7 +111,7 @@ export function ZcvTool() {
       void startCheckout();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, session?.user, preview?.previewId]);
+  }, [searchParams, session?.user, preview?.previewId, packId]);
 
   const startPreview = async () => {
     if (!file) {
@@ -144,7 +155,9 @@ export function ZcvTool() {
     if (!preview) return;
     if (!session?.user) {
       signInModal.onOpen();
-      router.replace(`/?buy=1&previewId=${encodeURIComponent(preview.previewId)}`);
+      router.replace(
+        `/?buy=1&previewId=${encodeURIComponent(preview.previewId)}&packId=${encodeURIComponent(packId)}`
+      );
       return;
     }
     setBusy(true);
@@ -154,6 +167,7 @@ export function ZcvTool() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           previewId: preview.previewId,
+          packId,
         }),
       });
       const json = await response.json();
@@ -194,10 +208,39 @@ export function ZcvTool() {
       </div>
 
       <div className="rounded-xl bg-muted/60 p-4 text-sm text-muted-foreground">
-        Free preview is an image; the video is generated after payment. {ZCV_PRICE_LABEL},
-        one {ZCV_DURATION_SECONDS}s video, one-time, no subscription. We do not promise hugging, a
-        plot, or 100% likeness.
+        Free preview is an image; the zombie couple video is generated after
+        payment. One free watermarked try per hour. Credit packs start at{" "}
+        {formatUsd(ZCV_DEFAULT_PACK.priceCents)} Single ({ZCV_DEFAULT_PACK.credits}{" "}
+        credits). Login is required only at Stripe Checkout.
       </div>
+
+      <fieldset className="space-y-3">
+        <legend className="text-sm font-medium">Credit pack</legend>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {ZCV_CREDIT_PACKS.map((pack) => (
+            <label
+              key={pack.id}
+              className={`cursor-pointer rounded-xl border p-3 text-sm ${
+                packId === pack.id
+                  ? "border-primary bg-primary/5"
+                  : "border-border"
+              }`}
+            >
+              <input
+                type="radio"
+                name="credit-pack"
+                className="sr-only"
+                checked={packId === pack.id}
+                onChange={() => setPackId(pack.id)}
+              />
+              <span className="font-semibold">{pack.name}</span>
+              <span className="block text-muted-foreground">
+                {formatUsd(pack.priceCents)} · {pack.credits} credits
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
 
       <div className="flex flex-col sm:flex-row gap-3">
         <Button type="button" onClick={startPreview} disabled={busy}>
@@ -209,7 +252,7 @@ export function ZcvTool() {
           onClick={startCheckout}
           disabled={busy || preview?.status !== "ready"}
         >
-          Buy {ZCV_DURATION_SECONDS}s video · {ZCV_PRICE_LABEL}
+          Buy {selectedPack.name} · {formatUsd(selectedPack.priceCents)}
         </Button>
       </div>
 

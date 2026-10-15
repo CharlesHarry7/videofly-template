@@ -32,7 +32,7 @@ import { ToolLandingPage } from "@/components/tool/tool-landing-page";
 import { VideoHistoryPanel } from "@/components/tool/video-history-panel";
 import { toast } from "sonner";
 
-const TOOL_PREFILL_KEY = "videofly_tool_prefill";
+const TOOL_PREFILL_KEY = "zombiecouplevideo_tool_prefill";
 
 // ============================================================================
 // Types
@@ -89,7 +89,7 @@ export function ToolPageLayout({
   const { openModal } = useUpgradeModal();
   const { shouldNotify, markNotified, resetNotification } = useNotificationDeduplication();
   const videoIdFromQuery = searchParams.get("id");
-  const NOTIFICATION_ASKED_KEY = "videofly_notification_asked";
+  const NOTIFICATION_ASKED_KEY = "zombiecouplevideo_notification_asked";
   const tNotify = useTranslations("Notifications");
   const tTool = useTranslations("ToolPage");
 

@@ -24,7 +24,7 @@ export function VideoScroll({ dict } : { dict: Record<string, string> | undefine
       >
         <Image
           src={`https://cdnv2.ruguoapp.com/FoAVSRtT2zVc96oDjAWrd5TvXXQ4v3.png`}
-          alt="VideoFly AI video generation platform preview"
+          alt="ZombieCoupleVideo zombie couple video preview"
           height={720}
           width={1400}
           className="mx-auto rounded-2xl object-cover h-full object-left-top"

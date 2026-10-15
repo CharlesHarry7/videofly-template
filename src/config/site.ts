@@ -2,6 +2,12 @@
  * Site configuration
  * Central place for website settings, auth providers, and features
  */
+import {
+  BRAND_NAME,
+  getPublicAppUrl,
+  KEYWORD,
+} from "@/lib/site";
+
 export interface SiteConfig {
   name: string;
   description: string;
@@ -23,9 +29,10 @@ export interface SiteConfig {
 }
 
 export const siteConfig: SiteConfig = {
-  name: "Zombie Couple Video",
-  description: "AI Zombie Couple Video Generator",
-  url: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+  name: BRAND_NAME,
+  description:
+    "Turn a couple photo into a zombie couple video. Free watermarked preview, then buy credits starting at $6.99.",
+  url: getPublicAppUrl(),
   ogImage: "/og.png",
   links: {},
   auth: {
@@ -37,6 +44,15 @@ export const siteConfig: SiteConfig = {
     defaultLoginRedirect: "/",
   },
 };
+
+export const siteKeywords = [
+  KEYWORD,
+  "zombie couple video generator",
+  "AI zombie couple video",
+  "couple photo to zombie video",
+  "cartoon zombie couple",
+  BRAND_NAME,
+];
 
 export function getEnabledAuthProviders() {
   const providers: string[] = [];

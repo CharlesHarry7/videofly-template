@@ -7,6 +7,7 @@ import { LocaleLink } from "@/i18n/navigation";
 import { authClient } from "@/lib/auth/client";
 import type { User } from "@/lib/auth/client";
 import { useSigninModal } from "@/hooks/use-signin-modal";
+import { BRAND_NAME } from "@/lib/site";
 
 export function ZcvHeader({ user }: { user?: User | null }) {
   const signInModal = useSigninModal();
@@ -24,17 +25,23 @@ export function ZcvHeader({ user }: { user?: User | null }) {
     <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur">
       <div className="container mx-auto flex h-16 items-center justify-between px-4">
         <LocaleLink href="/" className="font-semibold">
-          Zombie Couple Video
+          {BRAND_NAME}
         </LocaleLink>
         <nav className="hidden md:flex items-center gap-6 text-sm">
           <a href="/#steps" className="text-muted-foreground hover:text-foreground">
-            Steps
+            How it works
           </a>
-          <a href="/#pricing" className="text-muted-foreground hover:text-foreground">
+          <a href="/pricing" className="text-muted-foreground hover:text-foreground">
             Pricing
           </a>
           <a href="/#faq" className="text-muted-foreground hover:text-foreground">
             FAQ
+          </a>
+          <a
+            href="/zombie-couple-video"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            Tool
           </a>
           {activeUser ? (
             <LocaleLink href="/orders" className="text-muted-foreground hover:text-foreground">

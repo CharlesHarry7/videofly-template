@@ -47,9 +47,18 @@ export function UserAuthForm({
     setIsLoading(true);
 
     try {
+      const buyPreviewId = searchParams?.get("previewId");
+      const buyPackId = searchParams?.get("packId");
+      const checkoutReturn =
+        searchParams?.get("buy") === "1" && buyPreviewId
+          ? `/${lang}?buy=1&previewId=${encodeURIComponent(buyPreviewId)}${
+              buyPackId ? `&packId=${encodeURIComponent(buyPackId)}` : ""
+            }`
+          : null;
       await authClient.signIn.magicLink({
         email: data.email.toLowerCase(),
-        callbackURL: searchParams?.get("from") ?? `/${lang}`,
+        callbackURL:
+          searchParams?.get("from") ?? checkoutReturn ?? `/${lang}`,
       });
 
       toast.success("Check your email", {

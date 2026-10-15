@@ -1,7 +1,7 @@
 /**
  * Email Templates
  *
- * All email templates and utilities for VideoFly
+ * All email templates and utilities for ZombieCoupleVideo
  */
 
 export { MagicLinkEmail } from "./magic-link-email";

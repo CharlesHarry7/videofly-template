@@ -11,6 +11,8 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as {
       previewId?: string;
       claimSecret?: string;
+      packId?: string;
+      amountCents?: number;
     };
     const cookieStore = await cookies();
     const previewId =
@@ -31,6 +33,9 @@ export async function POST(request: Request) {
       email: user.email,
       previewId,
       claimSecret,
+      packId: typeof body.packId === "string" ? body.packId : undefined,
+      amountCents:
+        typeof body.amountCents === "number" ? body.amountCents : undefined,
     });
     return apiSuccess(result);
   } catch (error) {

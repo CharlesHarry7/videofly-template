@@ -1,6 +1,12 @@
 import sharp from "sharp";
 
 import { ZCV_LIMITS, ZCV_MODELS, ZCV_PRODUCT, ZCV_PROMPTS } from "./config";
+import {
+  getCreditPack,
+  publicCreditCatalog,
+  requireCreditPack,
+  type ZcvCreditPack,
+} from "./product";
 import { hashClaimSecret, hmacHex, randomSecret, safeEqual } from "./crypto";
 import { createMediaToken, verifyMediaToken } from "./media";
 import { ZcvStore } from "./store";
@@ -445,12 +451,22 @@ export class ZcvService {
     email?: string;
     previewId: string;
     claimSecret: string;
+    packId?: string;
+    amountCents?: number;
     successUrl?: string;
     cancelUrl?: string;
   }) {
     if (!this.stripe) {
       throw new ZcvError("Stripe is not configured", "stripe_missing", 503);
     }
+    let pack: ZcvCreditPack;
+    try {
+      pack = requireCreditPack(input.packId);
+    } catch {
+      throw new ZcvError("Unknown credit pack", "invalid_pack", 400);
+    }
+    // Client-supplied amounts are ignored. The server pack is the source of truth.
+    void input.amountCents;
     const preview = await this.claimPreview(
       input.previewId,
       input.claimSecret,
@@ -472,8 +488,8 @@ export class ZcvService {
         id: this.ids(),
         userId: input.userId,
         previewId: preview.id,
-        productId: ZCV_PRODUCT.id,
-        amountCents: ZCV_PRODUCT.amountCents,
+        productId: pack.id,
+        amountCents: pack.priceCents,
         currency: ZCV_PRODUCT.currency,
         status: "created",
         paidAt: null,
@@ -487,11 +503,18 @@ export class ZcvService {
     if (order.status === "paid" || order.paidAt) {
       throw new ZcvError("This preview is already paid", "already_paid", 409);
     }
+    const chargedPack = getCreditPack(order.productId) ?? pack;
 
     const session = await this.stripe.createCheckoutSession({
       orderId: order.id,
       userId: input.userId,
       email: input.email,
+      amountCents: order.amountCents,
+      currency: order.currency,
+      productId: order.productId,
+      productName: `${chargedPack.name} — ${chargedPack.credits} credits`,
+      productDescription: `${chargedPack.credits} credits (${chargedPack.videos} zombie couple video${chargedPack.videos === 1 ? "" : "s"}). One-time credit pack, no subscription.`,
+      credits: chargedPack.credits,
       idempotencyKey: `zcv-checkout-${order.id}`,
       successUrl:
         input.successUrl ||
@@ -502,20 +525,17 @@ export class ZcvService {
       status: "checkout_created",
       stripeCheckoutSessionId: session.id,
     });
-    return { url: session.url, orderId: order.id };
+    return {
+      url: session.url,
+      orderId: order.id,
+      packId: order.productId,
+      amountCents: order.amountCents,
+      credits: chargedPack.credits,
+    };
   }
 
   publicProduct() {
-    return {
-      id: ZCV_PRODUCT.id,
-      name: ZCV_PRODUCT.name,
-      amountCents: ZCV_PRODUCT.amountCents,
-      currency: ZCV_PRODUCT.currency,
-      durationSeconds: ZCV_PRODUCT.durationSeconds,
-      oneTime: true,
-      subscription: false,
-      copy: "Free preview is an image; the video is generated after payment.",
-    };
+    return publicCreditCatalog();
   }
 
   async handleStripeWebhook(rawBody: string, signature: string | null) {
@@ -605,10 +625,13 @@ export class ZcvService {
       ) {
         return { granted: false, reason: "session_mismatch", jobCreated: false };
       }
+      const pack = getCreditPack(order.productId);
       if (
-        object.amount_total !== ZCV_PRODUCT.amountCents ||
-        object.currency !== ZCV_PRODUCT.currency ||
-        metadata.productId !== ZCV_PRODUCT.id
+        !pack ||
+        object.amount_total !== order.amountCents ||
+        object.currency !== order.currency ||
+        metadata.productId !== order.productId ||
+        order.amountCents !== pack.priceCents
       ) {
         return { granted: false, reason: "amount_mismatch", jobCreated: false };
       }

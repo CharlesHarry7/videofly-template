@@ -1,5 +1,7 @@
+import { BRAND_NAME, SUPPORT_EMAIL } from "@/lib/site";
+
 export const metadata = {
-  title: "Contact - Zombie Couple Video",
+  title: `Contact - ${BRAND_NAME}`,
 };
 
 export default function ContactPage() {
@@ -8,7 +10,7 @@ export default function ContactPage() {
       <h1>Contact</h1>
       <p>
         Questions about your zombie couple video, privacy, or a refund can be
-        sent to <a href="mailto:support@example.com">support@example.com</a>.
+        sent to <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>.
       </p>
     </div>
   );

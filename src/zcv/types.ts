@@ -141,6 +141,13 @@ export interface StripeGateway {
     orderId: string;
     userId: string;
     email?: string;
+    amountCents: number;
+    currency: string;
+    productId: string;
+    productName: string;
+    productDescription: string;
+    credits: number;
+    priceId?: string;
     idempotencyKey: string;
     successUrl: string;
     cancelUrl: string;

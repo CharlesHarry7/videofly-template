@@ -27,10 +27,13 @@ export const SignInModalContent = ({ lang }: SignInModalContentProps) => {
   const [emailError, setEmailError] = useState("");
 
   const buyPreviewId = searchParams?.get("previewId");
+  const buyPackId = searchParams?.get("packId");
   const callbackURL =
     searchParams?.get("from") ??
     (searchParams?.get("buy") === "1" && buyPreviewId
-      ? `/${lang}?buy=1&previewId=${encodeURIComponent(buyPreviewId)}`
+      ? `/${lang}?buy=1&previewId=${encodeURIComponent(buyPreviewId)}${
+          buyPackId ? `&packId=${encodeURIComponent(buyPackId)}` : ""
+        }`
       : `/${lang}${siteConfig.routes.defaultLoginRedirect}`);
 
   const handleSocialLogin = async (provider: "google") => {

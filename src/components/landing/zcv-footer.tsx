@@ -1,4 +1,5 @@
 import { LocaleLink } from "@/i18n/navigation";
+import { BRAND_NAME, SUPPORT_EMAIL } from "@/lib/site";
 
 export function ZcvFooter() {
   const year = new Date().getFullYear();
@@ -6,12 +7,13 @@ export function ZcvFooter() {
     <footer className="border-t border-border bg-background">
       <div className="container mx-auto px-4 py-10 flex flex-col md:flex-row gap-6 justify-between">
         <div>
-          <p className="font-semibold">Zombie Couple Video</p>
+          <p className="font-semibold">{BRAND_NAME}</p>
           <p className="text-sm text-muted-foreground mt-2">
-            AI Zombie Couple Video Generator
+            Turn a couple photo into a zombie couple video.
           </p>
         </div>
         <div className="flex flex-wrap gap-4 text-sm">
+          <LocaleLink href="/pricing">Pricing</LocaleLink>
           <LocaleLink href="/privacy">Privacy</LocaleLink>
           <LocaleLink href="/refund">Refund</LocaleLink>
           <LocaleLink href="/contact">Contact</LocaleLink>
@@ -19,7 +21,8 @@ export function ZcvFooter() {
         </div>
       </div>
       <div className="container mx-auto px-4 pb-8 text-sm text-muted-foreground">
-        © {year} Zombie Couple Video. Based on VideoFly template (MIT).
+        © {year} {BRAND_NAME}.{" "}
+        <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
       </div>
     </footer>
   );

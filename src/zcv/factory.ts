@@ -5,10 +5,11 @@ import { getProvider } from "@/ai";
 import { getStorage } from "@/lib/storage";
 
 import { ZCV_PRODUCT } from "./config";
+import { getCreditPack, readStripePriceId } from "./product";
 import { ZcvService } from "./service";
 import { fromPostgresJs, type SqlClient } from "./sql";
 import { ZcvStore } from "./store";
-import { assertZcvStripeMode } from "./stripe-mode";
+import { assertZcvCheckoutMode, assertZcvStripeMode } from "./stripe-mode";
 import type { GenerationProvider, ObjectStorage, StripeGateway } from "./types";
 
 let postgresSql: ReturnType<typeof fromPostgresJs> | undefined;
@@ -163,6 +164,19 @@ export function createStripeGateway(): StripeGateway {
       return stripe.webhooks.constructEvent(payload, signature, secret);
     },
     async createCheckoutSession(input) {
+      assertZcvCheckoutMode(ZCV_PRODUCT.mode);
+      const pack = getCreditPack(input.productId);
+      if (!pack) {
+        throw new Error("Unknown credit pack");
+      }
+      if (
+        input.amountCents !== pack.priceCents ||
+        input.currency !== ZCV_PRODUCT.currency ||
+        input.credits !== pack.credits
+      ) {
+        throw new Error("Checkout amount must match the server credit pack");
+      }
+      const priceId = input.priceId || readStripePriceId(pack.slug);
       const session = await stripe.checkout.sessions.create({
         mode: ZCV_PRODUCT.mode,
         payment_method_types: ["card"],
@@ -173,20 +187,23 @@ export function createStripeGateway(): StripeGateway {
         metadata: {
           orderId: input.orderId,
           userId: input.userId,
-          productId: ZCV_PRODUCT.id,
+          productId: pack.id,
+          credits: String(pack.credits),
         },
         line_items: [
-          {
-            quantity: 1,
-            price_data: {
-              currency: ZCV_PRODUCT.currency,
-              unit_amount: ZCV_PRODUCT.amountCents,
-              product_data: {
-                name: ZCV_PRODUCT.name,
-                description: ZCV_PRODUCT.description,
+          priceId
+            ? { quantity: 1, price: priceId }
+            : {
+                quantity: 1,
+                price_data: {
+                  currency: ZCV_PRODUCT.currency,
+                  unit_amount: pack.priceCents,
+                  product_data: {
+                    name: input.productName,
+                    description: input.productDescription,
+                  },
+                },
               },
-            },
-          },
         ],
       }, {
         idempotencyKey: input.idempotencyKey,

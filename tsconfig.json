@@ -54,6 +54,7 @@
     "turbo",
     "docs",
     "drizzle.config.ts",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "open-next.config.ts"
   ]
 }

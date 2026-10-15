@@ -1,16 +1,22 @@
-export const metadata = {
-  title: "Refund Policy - Zombie Couple Video",
-};
+import { BRAND_NAME, SUPPORT_EMAIL } from "@/lib/site";
+import {
+  formatUsd,
+  ZCV_DEFAULT_PACK,
+  ZCV_DURATION_SECONDS,
+} from "@/zcv/product";
 
-import { ZCV_DURATION_SECONDS, ZCV_PRICE_LABEL } from "@/zcv/product";
+export const metadata = {
+  title: `Refund Policy - ${BRAND_NAME}`,
+};
 
 export default function RefundPage() {
   return (
     <div className="container mx-auto max-w-3xl py-16 prose dark:prose-invert">
       <h1>Refund Policy</h1>
       <p>
-        The {ZCV_PRICE_LABEL} purchase is a one-time charge for one {ZCV_DURATION_SECONDS}-second video. There is
-        no subscription.
+        Credit packs start at {formatUsd(ZCV_DEFAULT_PACK.priceCents)} Single (
+        {ZCV_DEFAULT_PACK.credits} credits) for one {ZCV_DURATION_SECONDS}-second
+        zombie couple video. There is no subscription.
       </p>
       <p>
         If payment succeeds but the video cannot be delivered after retries, the
@@ -21,7 +27,7 @@ export default function RefundPage() {
         refundable.
       </p>
       <p>
-        Contact <a href="mailto:support@example.com">support@example.com</a>.
+        Contact <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>.
       </p>
     </div>
   );

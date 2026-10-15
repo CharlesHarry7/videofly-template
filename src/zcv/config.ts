@@ -1,4 +1,10 @@
+import { BRAND_NAME, KEYWORD, KEYWORD_H1, SUPPORT_EMAIL } from "@/lib/site";
+
 import {
+  ZCV_CREDIT_PACKS,
+  ZCV_CREDITS_PER_VIDEO,
+  ZCV_CURRENCY,
+  ZCV_DEFAULT_PACK,
   ZCV_DURATION_SECONDS,
   ZCV_PRICE_CENTS,
   ZCV_PRODUCT_ID,
@@ -6,11 +12,14 @@ import {
 
 export const ZCV_PRODUCT = {
   id: ZCV_PRODUCT_ID,
-  name: "AI Zombie Couple Video",
-  description: `One ${ZCV_DURATION_SECONDS}-second cartoon zombie couple video. One-time purchase. No subscription.`,
+  name: `${ZCV_DEFAULT_PACK.name} — ${ZCV_DEFAULT_PACK.credits} credits`,
+  description: `${ZCV_DEFAULT_PACK.credits} credits for one ${ZCV_DURATION_SECONDS}-second cartoon zombie couple video. One-time credit pack. No subscription.`,
   amountCents: ZCV_PRICE_CENTS,
-  currency: "usd",
+  currency: ZCV_CURRENCY,
   durationSeconds: ZCV_DURATION_SECONDS,
+  credits: ZCV_DEFAULT_PACK.credits,
+  creditsPerVideo: ZCV_CREDITS_PER_VIDEO,
+  packs: ZCV_CREDIT_PACKS,
   mode: "payment",
 } as const;
 
@@ -36,7 +45,7 @@ export const ZCV_LIMITS = {
   allowedMimeTypes: ["image/jpeg", "image/png", "image/webp"] as const,
   maxUploadBytes: 8 * 1024 * 1024,
   maxUploadPixels: 25_000_000,
-  previewRateLimitPerHour: 5,
+  previewRateLimitPerHour: 1,
   dailyPreviewBudget: Number.parseInt(
     process.env.ZCV_DAILY_PREVIEW_BUDGET || "80",
     10
@@ -61,9 +70,9 @@ export const ZCV_PROMPTS = {
 };
 
 export const SITE = {
-  title: "AI Zombie Couple Video Generator",
-  h1: "Create Your AI Zombie Couple Video",
-  keyword: "zombie couple video",
-  name: "Zombie Couple Video",
-  supportEmail: process.env.ZCV_SUPPORT_EMAIL || "support@example.com",
+  title: "Zombie Couple Video | ZombieCoupleVideo",
+  h1: KEYWORD_H1,
+  keyword: KEYWORD,
+  name: BRAND_NAME,
+  supportEmail: SUPPORT_EMAIL,
 };

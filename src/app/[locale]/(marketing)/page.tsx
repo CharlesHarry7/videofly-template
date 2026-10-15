@@ -1,36 +1,31 @@
-import { ZcvHero } from "@/components/zcv/zcv-hero";
-import {
-  ZcvFaq,
-  ZcvFreeVsPaid,
-  ZcvPricing,
-  ZcvSteps,
-} from "@/components/zcv/zcv-sections";
-import { siteConfig } from "@/config/site";
+import { ZcvLanding } from "@/components/zcv/zcv-landing";
+import { siteConfig, siteKeywords } from "@/config/site";
+import { getPublicAppUrl } from "@/lib/site";
+import { SITE } from "@/zcv/config";
 
 export async function generateMetadata() {
+  const url = getPublicAppUrl();
   return {
-    title: "AI Zombie Couple Video Generator",
-    description:
-      "Create Your AI Zombie Couple Video. Free preview is an image; the video is generated after payment.",
-    keywords: ["zombie couple video"],
+    title: SITE.title,
+    description: siteConfig.description,
+    keywords: siteKeywords,
+    alternates: { canonical: url },
     openGraph: {
-      title: "AI Zombie Couple Video Generator",
-      description:
-        "Upload a two-person photo and create a cartoon zombie couple video.",
-      url: siteConfig.url,
+      title: SITE.title,
+      description: siteConfig.description,
+      url,
       siteName: siteConfig.name,
+      images: [{ url: siteConfig.ogImage }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: SITE.title,
+      description: siteConfig.description,
+      images: [siteConfig.ogImage],
     },
   };
 }
 
 export default function HomePage() {
-  return (
-    <>
-      <ZcvHero />
-      <ZcvSteps />
-      <ZcvFreeVsPaid />
-      <ZcvPricing />
-      <ZcvFaq />
-    </>
-  );
+  return <ZcvLanding />;
 }

@@ -18,13 +18,16 @@ const png = Buffer.from(
   "base64"
 );
 
+let previewSeq = 0;
+
 async function readyPreview(
   harness: Awaited<ReturnType<typeof createHarness>>,
   userId?: string
 ) {
+  previewSeq += 1;
   const bot = harness.service.issueBotChallenge();
   const created = await harness.service.createPreview({
-    ip: "1.1.1.1",
+    ip: `203.0.113.${(previewSeq % 250) + 1}`,
     file: { buffer: png, contentType: "image/png", size: png.length },
     rightsAccepted: true,
     bot,
@@ -87,6 +90,101 @@ describe("Zombie Couple Video product", () => {
     expect(order?.productId).toBe(ZCV_PRODUCT.id);
     expect(order?.userId).toBe("user_a");
     expect(harness.service.publicProduct().subscription).toBe(false);
+  });
+
+  it("charges the Single 10-credit pack and ignores client-supplied amounts", async () => {
+    const harness = await createHarness();
+    const preview = await readyPreview(harness, "user_a");
+    let captured: {
+      amountCents?: number;
+      productId?: string;
+      credits?: number;
+    } = {};
+    const original = harness.stripeGateway.createCheckoutSession.bind(
+      harness.stripeGateway
+    );
+    harness.stripeGateway.createCheckoutSession = async (input) => {
+      captured = input;
+      return original(input);
+    };
+
+    const checkout = await harness.service.createCheckout({
+      userId: "user_a",
+      previewId: preview.previewId,
+      claimSecret: preview.claimSecret,
+      packId: "single",
+      amountCents: 1,
+    });
+    const order = await harness.store.getOrder(checkout.orderId);
+
+    expect(order?.amountCents).toBe(699);
+    expect(order?.productId).toBe(ZCV_PRODUCT.id);
+    expect(captured.amountCents).toBe(699);
+    expect(captured.credits).toBe(10);
+    expect(captured.productId).toBe("zcv-video-5s");
+    expect(checkout.credits).toBe(10);
+  });
+
+  it("looks up Plus from packId and still validates the webhook against the order", async () => {
+    const harness = await createHarness();
+    const preview = await readyPreview(harness, "user_a");
+    const checkout = await harness.service.createCheckout({
+      userId: "user_a",
+      previewId: preview.previewId,
+      claimSecret: preview.claimSecret,
+      packId: "plus",
+    });
+    const order = await harness.store.getOrder(checkout.orderId);
+    expect(order?.amountCents).toBe(1699);
+    expect(order?.productId).toBe("zcv-plus");
+    expect(checkout.credits).toBe(30);
+
+    const event = paidCheckoutEvent({
+      eventId: `evt_${checkout.orderId}`,
+      orderId: checkout.orderId,
+      userId: "user_a",
+      amountCents: 1699,
+      productId: "zcv-plus",
+    });
+    const signed = signedWebhook(harness.stripe, event);
+    const result = await harness.service.handleStripeWebhook(
+      signed.payload,
+      signed.signature
+    );
+    expect(result.granted).toBe(true);
+  });
+
+  it("rejects an unknown credit pack before talking to Stripe", async () => {
+    const harness = await createHarness();
+    const preview = await readyPreview(harness, "user_a");
+    await expect(
+      harness.service.createCheckout({
+        userId: "user_a",
+        previewId: preview.previewId,
+        claimSecret: preview.claimSecret,
+        packId: "not-a-pack",
+      })
+    ).rejects.toMatchObject({ code: "invalid_pack" });
+  });
+
+  it("limits the free preview to one try per IP per hour", async () => {
+    const harness = await createHarness();
+    const input = {
+      ip: "9.9.9.9",
+      file: { buffer: png, contentType: "image/png", size: png.length },
+      rightsAccepted: true,
+    };
+    await harness.service.createPreview({
+      ...input,
+      bot: harness.service.issueBotChallenge(),
+    });
+    await expect(
+      harness.service.createPreview({
+        ...input,
+        bot: harness.service.issueBotChallenge(),
+      })
+    ).rejects.toMatchObject({ code: "rate_limited" });
+    expect(ZCV_LIMITS.previewRateLimitPerHour).toBe(1);
   });
 
   it("creates an explicitly marked, zero-cost local mock preview without provider calls", async () => {
