@@ -19,7 +19,7 @@ export const ZCV_CREDIT_PACKS: readonly ZcvCreditPack[] = [
     id: "zcv-video-5s",
     slug: "single",
     name: "Single",
-    priceCents: 699,
+    priceCents: 999,
     credits: 10,
     videos: 1,
   },
@@ -99,6 +99,6 @@ export function publicCreditCatalog() {
     })),
     oneTime: true,
     subscription: false,
-    copy: "Free preview is an image; the video is generated after payment. Credit packs start at $6.99 for 10 credits.",
+    copy: "Free preview is an image; the video is generated after payment. Credit packs start at $9.99 for 10 credits.",
   };
 }

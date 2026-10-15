@@ -1,5 +1,6 @@
 import postgres from "postgres";
 import Stripe from "stripe";
+import { getHyperdriveConnectionString, getImagesBinding } from "@/lib/cloudflare-env";
 
 import { getProvider } from "@/ai";
 import { getStorage } from "@/lib/storage";
@@ -56,31 +57,43 @@ function createDevMockStorage(): ObjectStorage {
 
 function createPostgresSql() {
   if (postgresSql) return postgresSql;
-  const databaseUrl =
-    process.env.DATABASE_URL?.trim() || process.env.POSTGRES_URL?.trim() || "";
-  if (!databaseUrl) {
-    throw new Error("DATABASE_URL is required");
+  const connectionString = getHyperdriveConnectionString();
+  
+  if (connectionString) {
+    // Hyperdrive connection
+    const sql = postgres(connectionString, {
+      max: 5,
+      fetch_types: false
+    });
+    return fromPostgresJs(sql);
+  } else {
+    // Regular PostgreSQL connection
+    const databaseUrl =
+      process.env.DATABASE_URL?.trim() || process.env.POSTGRES_URL?.trim() || "";
+    if (!databaseUrl) {
+      throw new Error("DATABASE_URL is required");
+    }
+    const sslMode = (
+      process.env.DATABASE_SSL_MODE ||
+      process.env.DATABASE_SSL ||
+      ""
+    )
+      .toLowerCase()
+      .trim();
+    const isLocalhost =
+      databaseUrl.includes("localhost") || databaseUrl.includes("127.0.0.1");
+    const sql = postgres(databaseUrl, {
+      max: 10,
+      ssl:
+        sslMode === "disable" || isLocalhost
+          ? undefined
+          : sslMode === "require"
+            ? "require"
+            : "require",
+    });
+    postgresSql = fromPostgresJs(sql);
+    return postgresSql;
   }
-  const sslMode = (
-    process.env.DATABASE_SSL_MODE ||
-    process.env.DATABASE_SSL ||
-    ""
-  )
-    .toLowerCase()
-    .trim();
-  const isLocalhost =
-    databaseUrl.includes("localhost") || databaseUrl.includes("127.0.0.1");
-  const sql = postgres(databaseUrl, {
-    max: 10,
-    ssl:
-      sslMode === "disable" || isLocalhost
-        ? undefined
-        : sslMode === "require"
-          ? "require"
-          : "require",
-  });
-  postgresSql = fromPostgresJs(sql);
-  return postgresSql;
 }
 
 export function createKieGenerationProvider(): GenerationProvider {

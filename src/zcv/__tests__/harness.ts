@@ -28,6 +28,37 @@ export class MemoryStorage implements ObjectStorage {
   }
 }
 
+export class MockImagesBinding {
+  transforms: Array<Record<string, unknown>> = [];
+  draws: Array<{ text: string; options: Record<string, unknown> }> = [];
+  outputs: Array<Record<string, unknown>> = [];
+  text(content: string) {
+    return { __text: content };
+  }
+  input(stream: ReadableStream<Uint8Array>) {
+    const self = this;
+    const chain = {
+      transform(options: Record<string, unknown>) {
+        self.transforms.push(options);
+        return chain;
+      },
+      draw(overlay: { __text?: string }, options: Record<string, unknown>) {
+        self.draws.push({ text: overlay?.__text ?? "", options });
+        return chain;
+      },
+      async output(options: Record<string, unknown>) {
+        self.outputs.push(options);
+        const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+        return {
+          response: () =>
+            new Response(bytes, { headers: { "content-type": "image/jpeg" } }),
+        };
+      },
+    };
+    return chain;
+  }
+}
+
 export class MockProvider implements GenerationProvider {
   imageCalls = 0;
   videoCalls = 0;
@@ -128,6 +159,7 @@ export async function createHarness(options: {
   const store = new ZcvStore(fromPgLite(client));
   const provider = new MockProvider();
   const storage = new MemoryStorage();
+  const images = new MockImagesBinding();
   const stripe = createStripeHelper();
   const stripeGateway = createStripeGateway(stripe);
   const tinyPng = Buffer.from(
@@ -147,6 +179,7 @@ export async function createHarness(options: {
     fetchBinary: options.fetchBinary || (async () => tinyPng),
     providerTimeoutMs: options.providerTimeoutMs,
     mockPreviewMode: options.mockPreviewMode,
+    images,
   });
   return {
     client,
@@ -157,6 +190,7 @@ export async function createHarness(options: {
     stripeGateway,
     service,
     tinyPng,
+    images,
     advanceTime: (milliseconds: number) => {
       clock += milliseconds;
     },

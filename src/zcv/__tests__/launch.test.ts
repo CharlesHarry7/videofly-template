@@ -13,11 +13,11 @@ import {
 } from "@/zcv/product";
 
 describe("ZombieCoupleVideo launch surface", () => {
-  it("starts credit packs at $6.99 Single with 10 credits", () => {
+  it("starts credit packs at $9.99 Single with 10 credits", () => {
     expect(ZCV_DEFAULT_PACK.name).toBe("Single");
-    expect(ZCV_DEFAULT_PACK.priceCents).toBe(699);
+    expect(ZCV_DEFAULT_PACK.priceCents).toBe(999);
     expect(ZCV_DEFAULT_PACK.credits).toBe(10);
-    expect(publicCreditCatalog().packs[0]?.priceLabel).toBe("$6.99");
+    expect(publicCreditCatalog().packs[0]?.priceLabel).toBe("$9.99");
     expect(getCreditPack("single")?.id).toBe(ZCV_DEFAULT_PACK.id);
   });
 
