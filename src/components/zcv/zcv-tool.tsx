@@ -30,7 +30,8 @@ export function ZcvTool() {
   const searchParams = useSearchParams();
   const signInModal = useSigninModal();
   const { data: session } = authClient.useSession();
-  const [file, setFile] = useState<File | null>(null);
+  const [fileA, setFileA] = useState<File | null>(null);
+  const [fileB, setFileB] = useState<File | null>(null);
   const [rightsAccepted, setRightsAccepted] = useState(false);
   const [packId, setPackId] = useState(
     () => searchParams.get("packId") || ZCV_DEFAULT_PACK.id
@@ -114,15 +115,20 @@ export function ZcvTool() {
   }, [searchParams, session?.user, preview?.previewId, packId]);
 
   const startPreview = async () => {
-    if (!file) {
-      toast.error("Upload a two-person photo first.");
+    if (!fileA || !fileB) {
+      toast.error("Upload both photos first.");
+      return;
+    }
+    if (!rightsAccepted) {
+      toast.error("Confirm portrait authorization first.");
       return;
     }
     setBusy(true);
     try {
       const challenge = await fetch("/api/zcv/challenge").then((res) => res.json());
       const form = new FormData();
-      form.set("file", file);
+      form.set("file", fileA);
+      form.set("fileB", fileB);
       form.set("rightsAccepted", rightsAccepted ? "true" : "false");
       form.set("botToken", challenge.data.token);
       form.set("botTimestamp", String(challenge.data.timestamp));
@@ -184,15 +190,28 @@ export function ZcvTool() {
   return (
     <div className="w-full rounded-3xl border border-border bg-card/80 p-6 md:p-8 space-y-6">
       <div className="space-y-2">
-        <Label htmlFor="photo">Two-person photo</Label>
-        <Input
-          id="photo"
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-        />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="photo-a">You (photo 1)</Label>
+            <Input
+              id="photo-a"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(event) => setFileA(event.target.files?.[0] ?? null)}
+            />
+          </div>
+          <div>
+            <Label htmlFor="photo-b">Partner (photo 2)</Label>
+            <Input
+              id="photo-b"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(event) => setFileB(event.target.files?.[0] ?? null)}
+            />
+          </div>
+        </div>
         <p className="text-sm text-muted-foreground">
-          JPEG, PNG, or WebP. 8MB max. You must have rights to this photo.
+          Two clear face photos. JPEG, PNG, or WebP. 8MB each. Free preview stays watermarked.
         </p>
       </div>
 
@@ -203,15 +222,12 @@ export function ZcvTool() {
           onCheckedChange={(value) => setRightsAccepted(value === true)}
         />
         <Label htmlFor="rights">
-          I have the rights to this photo and permission from everyone in it.
+          I confirm I own these photos or have permission, and I authorize using both portraits/likenesses to make a zombie couple video.
         </Label>
       </div>
 
       <div className="rounded-xl bg-muted/60 p-4 text-sm text-muted-foreground">
-        Free preview is an image; the zombie couple video is generated after
-        payment. One free watermarked try per hour. Credit packs start at{" "}
-        {formatUsd(ZCV_DEFAULT_PACK.priceCents)} Single ({ZCV_DEFAULT_PACK.credits}{" "}
-        credits). Login is required only at Stripe Checkout.
+        Free watermarked preview image. Then $9.99 Single one-time pack for your AI zombie love story video. One free try per hour. Login is required only at Stripe Checkout.
       </div>
 
       <fieldset className="space-y-3">
@@ -243,7 +259,7 @@ export function ZcvTool() {
       </fieldset>
 
       <div className="flex flex-col sm:flex-row gap-3">
-        <Button type="button" onClick={startPreview} disabled={busy}>
+        <Button type="button" onClick={startPreview} disabled={busy || !fileA || !fileB || !rightsAccepted}>
           {busy ? "Working..." : "Create free preview image"}
         </Button>
         <Button
@@ -252,7 +268,7 @@ export function ZcvTool() {
           onClick={startCheckout}
           disabled={busy || preview?.status !== "ready"}
         >
-          Buy {selectedPack.name} · {formatUsd(selectedPack.priceCents)}
+          Buy for {formatUsd(selectedPack.priceCents)}
         </Button>
       </div>
 
@@ -267,10 +283,11 @@ export function ZcvTool() {
             <p className="text-sm font-medium">Watermarked low-res preview image</p>
           )}
           <img
+            id="preview"
             src={preview.previewImageUrl}
             alt={
               preview.isMock
-                ? "Local mock preview derived from the uploaded photo"
+                ? "Local mock preview derived from the uploaded photos"
                 : "Cartoon zombie couple preview"
             }
             className="w-full max-w-md rounded-xl border"

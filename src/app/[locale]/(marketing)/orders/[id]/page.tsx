@@ -63,6 +63,9 @@ export default function OrderDetailPage() {
     <div className="container mx-auto max-w-2xl py-16 px-4 space-y-4">
       <h1 className="text-3xl font-bold">Order {params.id}</h1>
       <p className="text-muted-foreground">
+        Delivery target: within 24 hours after payment. If generation fails after retries, you receive a full refund.
+      </p>
+      <p className="text-muted-foreground">
         This page only shows status. Payment is granted by the verified webhook,
         not by opening this page.
       </p>

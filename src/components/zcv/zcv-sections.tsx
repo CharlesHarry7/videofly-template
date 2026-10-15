@@ -8,8 +8,8 @@ import {
 
 const steps = [
   {
-    title: "Upload a couple photo",
-    body: "Drop in a two-person photo you have rights to. The zombie couple video tool runs on the first screen — no account required to start.",
+    title: "Upload two photos",
+    body: "Drop in two photos you have rights to. The zombie couple video tool runs on the first screen — no account required to start.",
   },
   {
     title: "Get one free preview image",
@@ -65,7 +65,7 @@ export function ZcvFreeVsPaid() {
           <div className="rounded-2xl border border-primary/30 bg-primary/5 p-6">
             <h3 className="text-xl font-semibold mb-3">Paid</h3>
             <p className="text-2xl font-bold mb-3">
-              From {formatUsd(ZCV_CREDIT_PACKS[0].priceCents)}
+              {formatUsd(ZCV_CREDIT_PACKS[0].priceCents)}
             </p>
             <ul className="space-y-2 text-muted-foreground">
               <li>
@@ -87,12 +87,10 @@ export function ZcvPricing() {
     <section id="pricing" className="py-24 bg-background">
       <div className="container mx-auto px-4 max-w-5xl">
         <h2 className="text-3xl md:text-4xl font-bold text-center mb-4">
-          Zombie couple video credit packs
+          One credit pack (Single only)
         </h2>
         <p className="text-center text-muted-foreground mb-12 max-w-2xl mx-auto">
-          Prices are public and crawlable. Starting pack: Single at{" "}
-          {formatUsd(ZCV_CREDIT_PACKS[0].priceCents)} for {ZCV_CREDIT_PACKS[0].credits}{" "}
-          credits. Stripe Checkout runs only after login.
+          Single is {formatUsd(ZCV_CREDIT_PACKS[0].priceCents)} for {ZCV_CREDIT_PACKS[0].credits} credits. One-time purchase. Stripe Checkout after login.
         </p>
         <div className="grid gap-6 md:grid-cols-3">
           {ZCV_CREDIT_PACKS.map((pack) => (
@@ -129,28 +127,28 @@ export function ZcvPricing() {
 
 const faqs = [
   {
-    q: "What is a zombie couple video?",
-    a: "A zombie couple video is a short cartoon clip made from a two-person photo. ZombieCoupleVideo edits the photo into a cute undead couple, then animates it after you buy credits.",
+    q: "What is the price?",
+    a: "One credit pack: $9.99 (Single) for 10 credits — one video. No Plus/Bundle. No subscription.",
+  },
+  {
+    q: "How long until delivery?",
+    a: "After payment we aim to deliver within 24 hours.",
+  },
+  {
+    q: "What if it fails?",
+    a: "Full refund if we cannot deliver after retries. See /refund.",
+  },
+  {
+    q: "How do uploads work?",
+    a: "Upload two photos (you + partner), confirm likeness authorization, get a free watermarked preview image, then pay $9.99 for the video.",
   },
   {
     q: "Is the free result a video?",
-    a: "No. The free preview is a watermarked image. The zombie couple video is generated after payment.",
+    a: "No, watermarked image only.",
   },
   {
-    q: `What do I get for ${formatUsd(ZCV_CREDIT_PACKS[0].priceCents)}?`,
-    a: `Single is ${formatUsd(ZCV_CREDIT_PACKS[0].priceCents)} for ${ZCV_CREDIT_PACKS[0].credits} credits — enough for one ${ZCV_DURATION_SECONDS}-second silent zombie couple video. It is a one-time credit pack, not a subscription.`,
-  },
-  {
-    q: "Do I need an account to try it?",
-    a: "No. You can upload a couple photo and run the free preview as a guest. Login is required only when you check out with Stripe.",
-  },
-  {
-    q: "Will it look exactly like us or include a plot?",
-    a: "No. This is a cute cartoon zombie version of your photo. We do not promise hugging, a plot, or 100% likeness.",
-  },
-  {
-    q: "How do refunds work?",
-    a: "If a paid zombie couple video cannot be delivered after retries, the order is marked for refund. See the refund page.",
+    q: "Do I need an account to try?",
+    a: "Guest preview OK; login only at Stripe checkout.",
   },
   {
     q: "How do I contact support?",

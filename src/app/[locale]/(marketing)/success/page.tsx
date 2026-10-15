@@ -41,8 +41,17 @@ function SuccessInner() {
 
   return (
     <div className="container mx-auto max-w-2xl py-20 px-4 space-y-4">
-      <h1 className="text-3xl font-bold">Checkout complete</h1>
-      <p className="text-muted-foreground">{status}</p>
+      <h1 className="text-3xl font-bold">Payment received</h1>
+      <p className="text-muted-foreground">
+        We deliver your zombie couple video within 24 hours after payment clears.
+      </p>
+      <p className="text-muted-foreground">
+        If we cannot deliver, you get a full refund.
+      </p>
+      <p className="text-muted-foreground">
+        This page does not unlock the video; the webhook + order page do.
+      </p>
+      <p className="text-muted-foreground" role="status">{status}</p>
       {orderId ? (
         <Link className="text-primary underline" href={`/orders/${orderId}`}>
           Review order

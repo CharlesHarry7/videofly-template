@@ -19,7 +19,7 @@ export default function RefundPage() {
         zombie couple video. There is no subscription.
       </p>
       <p>
-        If payment succeeds but the video cannot be delivered after retries, the
+        Delivery target: within 24 hours after payment. If payment succeeds but the video cannot be delivered after retries, the
         order is marked for refund and we will refund the one-time charge.
       </p>
       <p>
