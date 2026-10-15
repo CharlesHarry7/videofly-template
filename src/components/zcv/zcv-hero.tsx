@@ -13,7 +13,7 @@ export function ZcvHero() {
           <div className="text-center space-y-6 max-w-3xl mx-auto">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20">
               <Sparkles className="h-4 w-4 text-primary" aria-hidden="true" />
-              <span className="text-sm font-medium text-primary">{KEYWORD_H1}</span>
+              <span className="text-sm font-medium text-primary">{BRAND_NAME}</span>
             </div>
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight">
               {KEYWORD_H1}
