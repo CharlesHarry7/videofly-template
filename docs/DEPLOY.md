@@ -50,11 +50,9 @@ Optional Stripe Price objects, if you create them in Stripe instead of using
 server `price_data`:
 
 - `STRIPE_PRICE_ID_SINGLE`
-- `STRIPE_PRICE_ID_PLUS`
-- `STRIPE_PRICE_ID_BUNDLE`
 
-Amounts are still enforced server-side against the pack table (`$6.99` Single /
-10 credits, `$16.99` Plus / 30, `$29.99` Bundle / 60).
+Amounts are still enforced server-side against the pack table (`$9.99` Single /
+10 credits). Plus and Bundle packs are not sold.
 
 ## Cloudflare steps (human)
 
@@ -89,9 +87,9 @@ Amounts are still enforced server-side against the pack table (`$6.99` Single /
    `checkout.session.async_payment_failed`, `payment_intent.payment_failed`.
 4. Copy the webhook signing secret into `STRIPE_WEBHOOK_SECRET`.
 5. Copy the secret key into `STRIPE_API_KEY` (`sk_test_...` first).
-6. Optional: create one-time Prices for Single `$6.99`, Plus `$16.99`, Bundle
-   `$29.99` and set the `STRIPE_PRICE_ID_*` secrets. If unset, Checkout uses
-   `price_data` from the server pack table.
+6. Optional: create a one-time Price for Single `$9.99` and set
+   `STRIPE_PRICE_ID_SINGLE`. If unset, Checkout uses `price_data` from the
+   server pack table. Do not create Plus or Bundle prices.
 7. Success URL is `/success?orderId=...`. That page never grants the video;
    the webhook does.
 
@@ -102,9 +100,16 @@ Amounts are still enforced server-side against the pack table (`$6.99` Single /
 2. Create a **private** R2 bucket. Paid videos are not public objects.
 3. Apply `src/db/migrations` before the first paid order.
 
-## Known Workers limits
+## Cloudflare bindings (Hyperdrive + Images)
 
-Image watermarking uses `sharp`. PostgreSQL uses `postgres`. Both expect a
-Node-compatible Workers build (`nodejs_compat` is on). If `sharp` fails on
-Workers, keep generation on a Node host or swap watermarking; do not disable
-the free-preview cap.
+- PostgreSQL goes through Hyperdrive. `wrangler.jsonc` binds `HYPERDRIVE` with a
+  placeholder id `00000000-0000-0000-0000-000000000000`. Create a Hyperdrive
+  config in Cloudflare and replace the id. The connection string stays in
+  Cloudflare, never in git.
+- On Workers a new Postgres.js client (`postgres` >= 3.4.5, `max: 5`,
+  `fetch_types: false`) is created per request from
+  `env.HYPERDRIVE.connectionString`. Local Node keeps using `DATABASE_URL`.
+- Watermarked previews use the Cloudflare Images binding `IMAGES`. `sharp` was
+  removed.
+- `nodejs_compat` stays on. Agents must not deploy; a human runs the deploy
+  steps above.

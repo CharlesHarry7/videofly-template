@@ -31,7 +31,7 @@ export interface SiteConfig {
 export const siteConfig: SiteConfig = {
   name: BRAND_NAME,
   description:
-    "Turn a couple photo into a zombie couple video. Free watermarked preview, then buy credits starting at $6.99.",
+    "Make a zombie couple video from two photos. Free watermarked preview, then one $9.99 credit pack for your AI zombie love story video.",
   url: getPublicAppUrl(),
   ogImage: "/og.png",
   links: {},

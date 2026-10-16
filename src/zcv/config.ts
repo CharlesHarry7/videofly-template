@@ -70,7 +70,7 @@ export const ZCV_PROMPTS = {
 };
 
 export const SITE = {
-  title: "Zombie Couple Video | ZombieCoupleVideo",
+  title: "Zombie Couple Video Maker: AI Zombie Love Story, $9.99",
   h1: KEYWORD_H1,
   keyword: KEYWORD,
   name: BRAND_NAME,

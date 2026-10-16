@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import sharp from "sharp";
 
 import { ZCV_LIMITS, ZCV_PRODUCT } from "../config";
 import { hashClaimSecret } from "../crypto";
@@ -85,7 +84,7 @@ describe("Zombie Couple Video product", () => {
       claimSecret: preview.claimSecret,
     });
     const order = await harness.store.getOrder(checkout.orderId);
-    expect(order?.amountCents).toBe(699);
+    expect(order?.amountCents).toBe(999);
     expect(order?.currency).toBe("usd");
     expect(order?.productId).toBe(ZCV_PRODUCT.id);
     expect(order?.userId).toBe("user_a");
@@ -117,42 +116,14 @@ describe("Zombie Couple Video product", () => {
     });
     const order = await harness.store.getOrder(checkout.orderId);
 
-    expect(order?.amountCents).toBe(699);
+    expect(order?.amountCents).toBe(999);
     expect(order?.productId).toBe(ZCV_PRODUCT.id);
-    expect(captured.amountCents).toBe(699);
+    expect(captured.amountCents).toBe(999);
     expect(captured.credits).toBe(10);
     expect(captured.productId).toBe("zcv-video-5s");
     expect(checkout.credits).toBe(10);
   });
 
-  it("looks up Plus from packId and still validates the webhook against the order", async () => {
-    const harness = await createHarness();
-    const preview = await readyPreview(harness, "user_a");
-    const checkout = await harness.service.createCheckout({
-      userId: "user_a",
-      previewId: preview.previewId,
-      claimSecret: preview.claimSecret,
-      packId: "plus",
-    });
-    const order = await harness.store.getOrder(checkout.orderId);
-    expect(order?.amountCents).toBe(1699);
-    expect(order?.productId).toBe("zcv-plus");
-    expect(checkout.credits).toBe(30);
-
-    const event = paidCheckoutEvent({
-      eventId: `evt_${checkout.orderId}`,
-      orderId: checkout.orderId,
-      userId: "user_a",
-      amountCents: 1699,
-      productId: "zcv-plus",
-    });
-    const signed = signedWebhook(harness.stripe, event);
-    const result = await harness.service.handleStripeWebhook(
-      signed.payload,
-      signed.signature
-    );
-    expect(result.granted).toBe(true);
-  });
 
   it("rejects an unknown credit pack before talking to Stripe", async () => {
     const harness = await createHarness();
@@ -1568,16 +1539,9 @@ describe("Zombie Couple Video product", () => {
       })
     ).rejects.toMatchObject({ code: "invalid_image" });
 
-    const tooManyPixels = await sharp({
-      create: {
-        width: 6000,
-        height: 5000,
-        channels: 3,
-        background: "white",
-      },
-    })
-      .png()
-      .toBuffer();
+    const tooManyPixels = Buffer.from(png);
+    tooManyPixels.writeUInt32BE(6000, 16);
+    tooManyPixels.writeUInt32BE(5000, 20);
     await expect(
       harness.service.createPreview({
         ...input,

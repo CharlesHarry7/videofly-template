@@ -1,4 +1,3 @@
-import sharp from "sharp";
 
 import { ZCV_LIMITS, ZCV_MODELS, ZCV_PRODUCT, ZCV_PROMPTS } from "./config";
 import {
@@ -19,7 +18,12 @@ import type {
   StripeGateway,
 } from "./types";
 import { ZcvError } from "./types";
-import { createLocalMockPreview, createWatermarkedPreview } from "./watermark";
+import {
+  createLocalMockPreview,
+  createWatermarkedPreview,
+  type ImagesBinding,
+  readImageHeader,
+} from "./watermark";
 
 export interface ZcvServiceOptions {
   store: ZcvStore;
@@ -36,6 +40,7 @@ export interface ZcvServiceOptions {
   fetchBinary?: (url: string) => Promise<Buffer>;
   providerTimeoutMs?: number;
   mockPreviewMode?: boolean;
+  images?: ImagesBinding;
 }
 
 interface StripeLikeEvent {
@@ -73,6 +78,7 @@ export class ZcvService {
   private readonly fetchBinary: (url: string) => Promise<Buffer>;
   private readonly providerTimeoutMs: number;
   private readonly mockPreviewMode: boolean;
+  private readonly images?: ImagesBinding;
 
   constructor(options: ZcvServiceOptions) {
     this.store = options.store;
@@ -98,6 +104,7 @@ export class ZcvService {
     this.providerTimeoutMs =
       options.providerTimeoutMs ?? ZCV_LIMITS.providerTimeoutMs;
     this.mockPreviewMode = options.mockPreviewMode ?? false;
+    this.images = options.images;
   }
 
   private async withDeadline<T>(
@@ -213,12 +220,8 @@ export class ZcvService {
     if (input.file.buffer.length !== input.file.size) {
       throw new ZcvError("Image is too large", "file_too_large", 400);
     }
-    let metadata: Awaited<ReturnType<ReturnType<typeof sharp>["metadata"]>>;
-    try {
-      metadata = await sharp(input.file.buffer, {
-        limitInputPixels: ZCV_LIMITS.maxUploadPixels,
-      }).metadata();
-    } catch {
+    const metadata = readImageHeader(input.file.buffer);
+    if (!metadata) {
       throw new ZcvError("Invalid image file", "invalid_image", 400);
     }
     const actualMime =
@@ -282,7 +285,7 @@ export class ZcvService {
 
     if (this.mockPreviewMode) {
       const previewKey = `zcv/${previewId}/preview.jpg`;
-      const mockImage = await createLocalMockPreview(input.file.buffer);
+      const mockImage = await createLocalMockPreview(input.file.buffer, this.images);
       await this.storage.put(previewKey, mockImage, "image/jpeg");
       await this.store.updatePreview(previewId, {
         intermediateImageKey: sourceKey,
@@ -365,7 +368,7 @@ export class ZcvService {
       deadline,
       "Preview storage"
     );
-    const watermarked = await createWatermarkedPreview(image);
+    const watermarked = await createWatermarkedPreview(image, this.images);
     await this.withDeadline(
       () => this.storage.put(previewKey, watermarked, "image/jpeg"),
       deadline,

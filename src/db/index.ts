@@ -1,5 +1,6 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { getHyperdriveConnectionString } from "@/lib/cloudflare-env";
 
 import * as schema from "./schema";
 
@@ -28,26 +29,44 @@ const parseSslConfig = (url: string) => {
 };
 
 function createDb() {
-  if (!databaseUrl || !databaseUrl.startsWith("postgres")) {
-    throw new Error(
-      "Missing or invalid DATABASE_URL. Set a valid PostgreSQL connection string in your .env file.\n" +
-        "Example: DATABASE_URL='postgresql://user:password@host:port/database'"
-    );
+  let connectionString = getHyperdriveConnectionString();
+  
+  if (connectionString) {
+    // Hyperdrive connection
+    const sql = postgres(connectionString, {
+      max: 5,
+      fetch_types: false
+    });
+    return drizzle(sql, { schema });
+  } else {
+    // Regular PostgreSQL connection
+    if (!databaseUrl || !databaseUrl.startsWith("postgres")) {
+      throw new Error(
+        "Missing or invalid DATABASE_URL. Set a valid PostgreSQL connection string in your .env file.\n" +
+          "Example: DATABASE_URL='postgresql://user:password@host:port/database'"
+      );
+    }
+    const sql = postgres(databaseUrl, {
+      max: 10,
+      ssl: parseSslConfig(databaseUrl),
+    });
+    return drizzle(sql, { schema });
   }
-  const sql = postgres(databaseUrl, {
-    max: 10,
-    ssl: parseSslConfig(databaseUrl),
-  });
-  return drizzle(sql, { schema });
 }
 
 let _db: ReturnType<typeof createDb> | undefined;
 export const db = new Proxy({} as ReturnType<typeof createDb>, {
-  get(_target, prop, receiver) {
+  get(_target, prop) {
+    if (getHyperdriveConnectionString()) {
+      const fresh = createDb();
+      const value = Reflect.get(fresh, prop, fresh);
+      return typeof value === "function" ? value.bind(fresh) : value;
+    }
     if (!_db) {
       _db = createDb();
     }
-    return Reflect.get(_db, prop, receiver);
+    const value = Reflect.get(_db, prop, _db);
+    return typeof value === "function" ? value.bind(_db) : value;
   },
 });
 

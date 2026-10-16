@@ -8,7 +8,7 @@ Built on the VideoFly / saasfly Next.js template (MIT). This product is a single
 - H1: **Zombie Couple Video**
 - Keyword route: `/zombie-couple-video` (canonical to home)
 - Tool on the first screen: upload → one free watermarked preview image → login only at Stripe Checkout
-- Credit packs start at **$6.99 Single (10 credits)** for one 5-second video
+- Credit packs start at **$9.99 Single (10 credits)** for one 5-second video
 - Secrets come from env only. Never commit Stripe keys.
 
 See `.env.example` for env **names** and `docs/DEPLOY.md` for Cloudflare + Stripe human steps.

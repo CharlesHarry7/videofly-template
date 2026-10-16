@@ -18,10 +18,19 @@ export async function POST(request: Request) {
   try {
     const form = await request.formData();
     const file = form.get("file");
+    const fileB = form.get("fileB");
+    
     if (!(file instanceof File)) {
-      throw new ApiError("Missing file", 400);
+      throw new ApiError("Both photos are required", 400);
     }
     if (file.size > ZCV_LIMITS.maxUploadBytes) {
+      throw new ApiError("Image is too large", 413);
+    }
+    
+    if (!(fileB instanceof File)) {
+      throw new ApiError("Both photos are required", 400);
+    }
+    if (fileB.size > ZCV_LIMITS.maxUploadBytes) {
       throw new ApiError("Image is too large", 413);
     }
     const service = createZcvServiceFromEnv();

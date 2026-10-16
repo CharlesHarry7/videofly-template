@@ -13,22 +13,18 @@ import {
 } from "@/zcv/product";
 
 describe("ZombieCoupleVideo launch surface", () => {
-  it("starts credit packs at $6.99 Single with 10 credits", () => {
+  it("starts credit packs at $9.99 Single with 10 credits", () => {
     expect(ZCV_DEFAULT_PACK.name).toBe("Single");
-    expect(ZCV_DEFAULT_PACK.priceCents).toBe(699);
+    expect(ZCV_DEFAULT_PACK.priceCents).toBe(999);
     expect(ZCV_DEFAULT_PACK.credits).toBe(10);
-    expect(publicCreditCatalog().packs[0]?.priceLabel).toBe("$6.99");
+    expect(publicCreditCatalog().packs[0]?.priceLabel).toBe("$9.99");
     expect(getCreditPack("single")?.id).toBe(ZCV_DEFAULT_PACK.id);
   });
 
   it("reads optional Stripe price ids from env names only", () => {
     expect(stripePriceIdEnvName("single")).toBe("STRIPE_PRICE_ID_SINGLE");
-    expect(stripePriceIdEnvName("plus")).toBe("STRIPE_PRICE_ID_PLUS");
-    expect(stripePriceIdEnvName("bundle")).toBe("STRIPE_PRICE_ID_BUNDLE");
     expect(ZCV_CREDIT_PACKS.map((pack) => pack.slug)).toEqual([
       "single",
-      "plus",
-      "bundle",
     ]);
   });
 
@@ -49,16 +45,17 @@ describe("ZombieCoupleVideo launch surface", () => {
     );
   });
 
-  it("keeps pricing and the keyword route in the sitemap and omits template pages", () => {
+  it("keeps pricing in the sitemap and omits template pages and the canonicalized keyword route", () => {
     const previous = process.env.NEXT_PUBLIC_APP_URL;
     process.env.NEXT_PUBLIC_APP_URL = "https://zombiecouplevideo.com";
     try {
       const urls = sitemap().map((entry) => entry.url);
       expect(urls).toContain("https://zombiecouplevideo.com");
       expect(urls).toContain("https://zombiecouplevideo.com/pricing");
-      expect(urls).toContain(
+      expect(urls).not.toContain(
         "https://zombiecouplevideo.com/zombie-couple-video"
       );
+      expect(urls).toContain("https://zombiecouplevideo.com/refund");
       expect(urls.some((url) => url.includes("/platform"))).toBe(false);
       expect(SITEMAP_EXCLUDED_PATHS).toContain("platform");
     } finally {
