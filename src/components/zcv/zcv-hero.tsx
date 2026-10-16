@@ -23,18 +23,15 @@ export function ZcvHero() {
             </p>
             <div className="mt-6">
               <div className="relative w-full max-w-3xl aspect-video rounded-3xl border border-muted-foreground/20 overflow-hidden">
-                <video
+                <img
+                  src="/zcv-sample-poster.svg"
+                  alt="Zombie couple video sample coming soon"
+                  width={1280}
+                  height={720}
                   className="w-full h-full object-cover"
-                  controls
-                  playsInline
-                  muted
-                  poster="/og.png"
-                >
-                  <source src="" type="video/mp4" />
-                  Your browser does not support the video tag.
-                </video>
+                />
                 <div className="absolute bottom-4 left-4 text-sm text-muted-foreground">
-                  Sample zombie couple video - replace with your own clip before launch.
+                  Sample coming soon
                 </div>
               </div>
             </div>
