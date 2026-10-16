@@ -45,16 +45,17 @@ describe("ZombieCoupleVideo launch surface", () => {
     );
   });
 
-  it("keeps pricing and the keyword route in the sitemap and omits template pages", () => {
+  it("keeps pricing in the sitemap and omits template pages and the canonicalized keyword route", () => {
     const previous = process.env.NEXT_PUBLIC_APP_URL;
     process.env.NEXT_PUBLIC_APP_URL = "https://zombiecouplevideo.com";
     try {
       const urls = sitemap().map((entry) => entry.url);
       expect(urls).toContain("https://zombiecouplevideo.com");
       expect(urls).toContain("https://zombiecouplevideo.com/pricing");
-      expect(urls).toContain(
+      expect(urls).not.toContain(
         "https://zombiecouplevideo.com/zombie-couple-video"
       );
+      expect(urls).toContain("https://zombiecouplevideo.com/refund");
       expect(urls.some((url) => url.includes("/platform"))).toBe(false);
       expect(SITEMAP_EXCLUDED_PATHS).toContain("platform");
     } finally {

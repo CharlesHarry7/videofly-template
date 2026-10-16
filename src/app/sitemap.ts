@@ -10,7 +10,6 @@ const PUBLIC_ROUTES: Array<{
   changeFrequency: "daily" | "weekly" | "monthly";
 }> = [
   { path: "", priority: 1, changeFrequency: "daily" },
-  { path: "zombie-couple-video", priority: 0.95, changeFrequency: "daily" },
   { path: "pricing", priority: 0.9, changeFrequency: "weekly" },
   { path: "contact", priority: 0.4, changeFrequency: "monthly" },
   { path: "privacy", priority: 0.3, changeFrequency: "monthly" },
@@ -19,6 +18,7 @@ const PUBLIC_ROUTES: Array<{
 ];
 
 export const SITEMAP_EXCLUDED_PATHS = [
+  "zombie-couple-video",
   "platform",
   "image-to-video",
   "text-to-video",
