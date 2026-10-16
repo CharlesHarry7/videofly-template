@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm typecheck
+        env:
+          BETTER_AUTH_SECRET: ci-placeholder-not-a-secret
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          RESEND_API_KEY: re_ci_placeholder
+          RESEND_FROM: ci@example.com
+      - name: Unit and smoke tests
+        run: pnpm test
+        env:
+          BETTER_AUTH_SECRET: ci-placeholder-not-a-secret
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          RESEND_API_KEY: re_ci_placeholder
+          RESEND_FROM: ci@example.com
