@@ -214,36 +214,35 @@ export function LandingHeader({ user }: { user?: User | null }) {
           {/* Right Section */}
           <div className="flex items-center gap-4">
             {/* Language Switcher */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
-                  <Globe className="h-4 w-4" />
-                  <span className="hidden sm:inline">{locale.toUpperCase()}</span>
+            <fieldset
+              aria-label={t("Common.language")}
+              className="inline-flex items-center gap-0.5 rounded-full border border-border/60 bg-background/60 p-0.5 shadow-sm backdrop-blur-sm"
+            >
+              {(["zh", "en"] as const).map((nextLocale) => (
+                <button
+                  key={nextLocale}
+                  type="button"
+                  aria-pressed={locale === nextLocale}
+                  disabled={isPending || locale === nextLocale}
+                  onClick={() => switchLocale(nextLocale)}
+                  className={cn(
+                    "rounded-full px-2.5 py-1 text-xs font-semibold transition-colors",
+                    locale === nextLocale
+                      ? "bg-foreground text-background shadow-sm"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                    (isPending || locale === nextLocale) && "cursor-default"
+                  )}
+                >
+                  {nextLocale === "zh" ? "中文" : "EN"}
                 </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                className="min-w-[120px] border-border/50 bg-background/95 backdrop-blur-sm shadow-xl"
-              >
-                <DropdownMenuItem
-                  onClick={() => switchLocale("en")}
-                  className="cursor-pointer hover:bg-accent"
-                >
-                  {locale === "zh" ? "English" : "英文"}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => switchLocale("zh")}
-                  className="cursor-pointer hover:bg-accent"
-                >
-                  {locale === "zh" ? "中文" : "中文"}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              ))}
+            </fieldset>
 
             {/* Theme Toggle */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
+                  type="button"
                   className="flex items-center justify-center h-8 w-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                   aria-label="Toggle theme"
                 >
@@ -282,7 +281,7 @@ export function LandingHeader({ user }: { user?: User | null }) {
             {user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+                  <button type="button" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
                     <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center ring-2 ring-background/20">
                       <span className="text-sm font-medium">
                         {user.name?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase()}
@@ -432,6 +431,7 @@ export function LandingHeader({ user }: { user?: User | null }) {
                   <div className="flex items-center gap-3 p-2">
                     <Globe className="h-4 w-4" />
                     <button
+                      type="button"
                       onClick={() => switchLocale("en")}
                       className="text-sm hover:text-foreground transition-colors"
                     >
@@ -439,6 +439,7 @@ export function LandingHeader({ user }: { user?: User | null }) {
                     </button>
                     <span className="text-muted-foreground">/</span>
                     <button
+                      type="button"
                       onClick={() => switchLocale("zh")}
                       className="text-sm hover:text-foreground transition-colors"
                     >
@@ -453,6 +454,7 @@ export function LandingHeader({ user }: { user?: User | null }) {
                       {(["light", "dark", "system"] as const).map((mode) => (
                         <button
                           key={mode}
+                          type="button"
                           onClick={() => setTheme(mode)}
                           className={cn(
                             "text-sm px-2 py-1 rounded-md transition-colors",
@@ -491,6 +493,7 @@ export function LandingHeader({ user }: { user?: User | null }) {
                         {t('Header.settings')}
                       </LocaleLink>
                       <button
+                        type="button"
                         onClick={handleSignOut}
                         className="p-2 text-left text-destructive hover:bg-destructive/10 rounded-md transition-colors"
                       >
@@ -517,3 +520,4 @@ function CreditsDisplay() {
   const { balance } = useCredits();
   return <span>{balance?.availableCredits ?? 0}</span>;
 }
+
